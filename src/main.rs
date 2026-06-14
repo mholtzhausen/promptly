@@ -9,6 +9,7 @@ mod popup;
 mod prompt_parser;
 mod tray;
 mod variable_dialog;
+mod window_hints;
 
 use anyhow::Result;
 use gtk4::prelude::*;
@@ -152,15 +153,24 @@ fn handle_hotkey(popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>, app: &gtk
         let ps = Arc::clone(popup_state);
         let app_ref = app.clone();
         let ps_dialog = Arc::clone(popup_state);
+        let ps_edit = Arc::clone(popup_state);
+        let ps_delete = Arc::clone(popup_state);
 
-        let select_cb: Rc<dyn Fn(&str, &str)> = Rc::new(move |name: &str, content: &str| {
-            handle_prompt_select(name, content, &ps, &app_ref);
+        let select_cb: Rc<dyn Fn(&db::Prompt)> = Rc::new(move |prompt: &db::Prompt| {
+            handle_prompt_select(prompt, &ps, &app_ref);
         });
         let add_cb: Rc<dyn Fn()> = Rc::new(move || {
-            show_new_prompt_dialog(&ps_dialog);
+            show_prompt_dialog(&ps_dialog, None);
+        });
+        let edit_cb: Rc<dyn Fn(db::Prompt)> = Rc::new(move |prompt: db::Prompt| {
+            show_prompt_dialog(&ps_edit, Some(prompt));
+        });
+        let delete_cb: Rc<dyn Fn(db::Prompt)> = Rc::new(move |prompt: db::Prompt| {
+            show_delete_confirmation(&ps_delete, prompt);
         });
 
-        let popup_window = popup::PopupWindow::new(app, conn, select_cb, add_cb);
+        let popup_window =
+            popup::PopupWindow::new(app, conn, select_cb, add_cb, edit_cb, delete_cb);
 
         popup_window.show();
 
@@ -171,12 +181,11 @@ fn handle_hotkey(popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>, app: &gtk
 
 /// Handle prompt selection: parse variables and show input dialog.
 fn handle_prompt_select(
-    name: &str,
-    content: &str,
+    prompt: &db::Prompt,
     popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>,
     app: &gtk4::Application,
 ) {
-    let variables = prompt_parser::parse_variables(content);
+    let variables = prompt_parser::parse_variables(&prompt.content);
 
     // Hide the main popup
     if let Some(popup) = popup_state.lock().unwrap().as_mut() {
@@ -185,7 +194,7 @@ fn handle_prompt_select(
 
     if variables.is_empty() {
         // No variables — copy immediately and show notification
-        let result = content.to_string();
+        let result = prompt.content.clone();
         match arboard::Clipboard::new() {
             Ok(mut clipboard) => {
                 if let Err(e) = clipboard.set_text(&result) {
@@ -196,7 +205,10 @@ fn handle_prompt_select(
                 log::error!("Failed to create clipboard: {}", e);
             }
         }
-        show_notification("Prompt copied", &format!("'{}' copied to clipboard", name));
+        show_notification(
+            "Prompt copied",
+            &format!("'{}' copied to clipboard", prompt.name),
+        );
     } else {
         // Show variable input dialog
         let ps = Arc::clone(popup_state);
@@ -207,11 +219,11 @@ fn handle_prompt_select(
             .visible(false)
             .build();
 
-        let name_string = name.to_string();
+        let name_string = prompt.name.clone();
         variable_dialog::show_variable_dialog(
             &temp_window,
-            name,
-            content,
+            &prompt.name,
+            &prompt.content,
             &variables,
             move |_result: &str| {
                 show_notification(
@@ -231,8 +243,11 @@ fn handle_prompt_select(
     }
 }
 
-/// Show the "New Prompt" dialog.
-fn show_new_prompt_dialog(popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>) {
+/// Show the prompt create/edit dialog.
+fn show_prompt_dialog(
+    popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>,
+    prompt: Option<db::Prompt>,
+) {
     let parent = {
         let guard = popup_state.lock().unwrap();
         guard.as_ref().map(|p| p.window.clone())
@@ -242,19 +257,24 @@ fn show_new_prompt_dialog(popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>) 
         None => return,
     };
 
+    let editing_id = prompt.as_ref().map(|prompt| prompt.id);
     let dialog = gtk4::Dialog::builder()
         .application(&parent.application().unwrap())
-        .title("New Prompt Template")
+        .title(if editing_id.is_some() {
+            "Edit Prompt Template"
+        } else {
+            "New Prompt Template"
+        })
         .transient_for(&parent)
         .modal(true)
         .build();
 
     let content_area = dialog.content_area();
-    let main_box = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
-    main_box.set_margin_start(16);
-    main_box.set_margin_end(16);
-    main_box.set_margin_top(16);
-    main_box.set_margin_bottom(16);
+    let main_box = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
+    main_box.set_margin_start(14);
+    main_box.set_margin_end(14);
+    main_box.set_margin_top(14);
+    main_box.set_margin_bottom(14);
 
     // CSS styling
     let provider = gtk4::CssProvider::new();
@@ -265,7 +285,6 @@ fn show_new_prompt_dialog(popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>) 
         gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
 
-    // Name label + Entry
     let name_label = gtk4::Label::builder()
         .label("Prompt Name")
         .halign(gtk4::Align::Start)
@@ -275,7 +294,15 @@ fn show_new_prompt_dialog(popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>) 
         .name("variable-entry")
         .build();
 
-    // Template label + TextView in ScrolledWindow
+    let description_label = gtk4::Label::builder()
+        .label("Description")
+        .halign(gtk4::Align::Start)
+        .build();
+    let description_entry = gtk4::Entry::builder()
+        .placeholder_text("Short summary shown next to the title")
+        .name("variable-entry")
+        .build();
+
     let template_label = gtk4::Label::builder()
         .label("Template Content")
         .halign(gtk4::Align::Start)
@@ -293,10 +320,15 @@ fn show_new_prompt_dialog(popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>) 
         .min_content_height(150)
         .build();
 
-    // Help text
+    if let Some(prompt) = prompt.as_ref() {
+        name_entry.set_text(&prompt.name);
+        description_entry.set_text(&prompt.description);
+        template_buffer.set_text(&prompt.content);
+    }
+
     let help_label = gtk4::Label::builder()
         .label(
-            "Use {{name|type|default|desc}} placeholders.\nTypes: text, number, option, multiline.",
+            "Use {{name|type|default|desc}} placeholders. Types: text, number, option, multiline.",
         )
         .name("help-label")
         .halign(gtk4::Align::Start)
@@ -304,14 +336,15 @@ fn show_new_prompt_dialog(popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>) 
 
     main_box.append(&name_label);
     main_box.append(&name_entry);
+    main_box.append(&description_label);
+    main_box.append(&description_entry);
     main_box.append(&template_label);
     main_box.append(&scrolled);
     main_box.append(&help_label);
 
-    // Buttons
     let button_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
     button_box.set_halign(gtk4::Align::End);
-    button_box.set_margin_top(16);
+    button_box.set_margin_top(14);
 
     let cancel_btn = gtk4::Button::builder()
         .name("cancel-button")
@@ -324,33 +357,50 @@ fn show_new_prompt_dialog(popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>) 
 
     let save_btn = gtk4::Button::builder()
         .name("copy-button")
-        .label("Save")
+        .label(if editing_id.is_some() {
+            "Update"
+        } else {
+            "Save"
+        })
         .build();
 
     let dialog_save = dialog.clone();
     let name_entry_clone = name_entry.clone();
+    let description_entry_clone = description_entry.clone();
     let popup_state_clone = Arc::clone(popup_state);
     save_btn.connect_clicked(move |_| {
-        let name = name_entry_clone.text().to_string();
+        let name = name_entry_clone.text().trim().to_string();
+        let description = description_entry_clone.text().trim().to_string();
         let start = template_buffer.start_iter();
         let end = template_buffer.end_iter();
         let content = template_buffer.text(&start, &end, false).to_string();
 
-        if name.trim().is_empty() || content.trim().is_empty() {
+        if name.is_empty() || description.is_empty() || content.trim().is_empty() {
             return;
         }
 
-        let conn = db::init_db(&config::db_path()).unwrap();
-        if let Err(e) = db::upsert_prompt(&conn, &name, &content) {
-            log::error!("Failed to save prompt: {}", e);
-        } else {
-            show_notification("Prompt Saved", &format!("Saved template '{}'", name));
-            // Refresh list
-            let mut guard = popup_state_clone.lock().unwrap();
-            if let Some(popup) = guard.as_mut() {
-                popup.refresh_prompts(&conn);
+        let conn = match db::init_db(&config::db_path()) {
+            Ok(conn) => conn,
+            Err(e) => {
+                log::error!("Failed to open database: {}", e);
+                return;
             }
+        };
+
+        let result = if let Some(id) = editing_id {
+            db::update_prompt(&conn, id, &name, &description, &content).map(|_| id)
+        } else {
+            db::upsert_prompt(&conn, &name, &description, &content)
+        };
+
+        if let Err(e) = result {
+            log::error!("Failed to save prompt: {}", e);
+            show_notification("Prompt not saved", "Could not save the prompt template.");
+            return;
         }
+
+        show_notification("Prompt Saved", &format!("Saved template '{}'", name));
+        refresh_popup_list(&popup_state_clone, &conn);
         dialog_save.close();
     });
 
@@ -360,6 +410,97 @@ fn show_new_prompt_dialog(popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>) 
 
     content_area.append(&main_box);
     dialog.show();
+}
+
+fn show_delete_confirmation(
+    popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>,
+    prompt: db::Prompt,
+) {
+    let parent = {
+        let guard = popup_state.lock().unwrap();
+        guard.as_ref().map(|p| p.window.clone())
+    };
+    let parent = match parent {
+        Some(w) => w,
+        None => return,
+    };
+
+    let dialog = gtk4::Dialog::builder()
+        .application(&parent.application().unwrap())
+        .title("Delete Prompt Template")
+        .transient_for(&parent)
+        .modal(true)
+        .build();
+    let content_area = dialog.content_area();
+    let main_box = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
+    main_box.set_margin_start(14);
+    main_box.set_margin_end(14);
+    main_box.set_margin_top(14);
+    main_box.set_margin_bottom(14);
+
+    let message = gtk4::Label::builder()
+        .label(&format!("Delete '{}'? This cannot be undone.", prompt.name))
+        .wrap(true)
+        .halign(gtk4::Align::Start)
+        .build();
+    main_box.append(&message);
+
+    let button_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+    button_box.set_halign(gtk4::Align::End);
+
+    let cancel_btn = gtk4::Button::builder()
+        .name("cancel-button")
+        .label("Cancel")
+        .build();
+    let dialog_cancel = dialog.clone();
+    cancel_btn.connect_clicked(move |_| {
+        dialog_cancel.close();
+    });
+
+    let delete_btn = gtk4::Button::builder()
+        .name("prompt-delete-confirm-button")
+        .label("Delete")
+        .build();
+    let dialog_delete = dialog.clone();
+    let popup_state_delete = Arc::clone(popup_state);
+    delete_btn.connect_clicked(move |_| {
+        let conn = match db::init_db(&config::db_path()) {
+            Ok(conn) => conn,
+            Err(e) => {
+                log::error!("Failed to open database: {}", e);
+                return;
+            }
+        };
+
+        if let Err(e) = db::delete_prompt(&conn, prompt.id) {
+            log::error!("Failed to delete prompt: {}", e);
+            show_notification(
+                "Prompt not deleted",
+                "Could not delete the prompt template.",
+            );
+            return;
+        }
+
+        show_notification(
+            "Prompt deleted",
+            &format!("Deleted template '{}'", prompt.name),
+        );
+        refresh_popup_list(&popup_state_delete, &conn);
+        dialog_delete.close();
+    });
+
+    button_box.append(&cancel_btn);
+    button_box.append(&delete_btn);
+    main_box.append(&button_box);
+    content_area.append(&main_box);
+    dialog.show();
+}
+
+fn refresh_popup_list(popup_state: &Arc<Mutex<Option<popup::PopupWindow>>>, conn: &db::Connection) {
+    let mut guard = popup_state.lock().unwrap();
+    if let Some(popup) = guard.as_mut() {
+        popup.refresh_prompts(conn);
+    }
 }
 
 /// Show a desktop notification.

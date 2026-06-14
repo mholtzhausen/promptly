@@ -7,9 +7,11 @@ A Rust + GTK4 system-tray application that manages prompt templates with variabl
 - **System Tray Icon**: Lives in your system tray using the freedesktop/KDE StatusNotifierItem protocol via `ksni`.
 - **Global Hotkey**: Press `Ctrl+Alt+Space` from anywhere to trigger the prompt selector popup.
 - **Fuzzy Search**: Filter your stored templates quickly by typing.
-- **Variable Interpolation**: Templates with placeholders like `{{name|type|default|description}}` will open a type-aware input dialog.
+- **Variable Interpolation**: Templates with placeholders like `{{name|type|default|description}}` open a centered, always-on-top input dialog.
 - **Type-Aware Inputs**: Automatically generates GTK fields (Text Entry, SpinButton for numbers, ComboBoxText for options, TextView for multiline text).
-- **Clipboard Integration**: Automatically interpolates the inputs and copies the final prompt to the clipboard.
+- **Editable Final Prompt**: Review and adjust the interpolated prompt in a fixed-height multiline editor before copying.
+- **Clipboard Integration**: Copies the final edited prompt to the clipboard.
+- **Prompt Metadata and Actions**: Store a title, description, and template content; edit or delete templates from the popup with confirmation.
 - **Add Prompts UI**: Add new prompt templates directly from the app interface using the `+` button in the popup.
 - **Cross-Platform/DE Compatibility**: Designed to work on X11 and Wayland (reads inputs directly via `rdev` / `evdev`).
 

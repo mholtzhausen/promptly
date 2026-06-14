@@ -14,9 +14,12 @@ const POPUP_DEFAULT_HEIGHT: i32 = 400;
 
 use crate::config::CSS;
 use crate::db::{self, Connection, Prompt};
+use crate::window_hints;
 
-/// Callback when a prompt is selected (name + content).
-pub type OnPromptSelect = Rc<dyn Fn(&str, &str)>;
+/// Callback when a prompt is selected.
+pub type OnPromptSelect = Rc<dyn Fn(&Prompt)>;
+/// Callback for prompt edit/delete actions.
+pub type OnPromptAction = Rc<dyn Fn(Prompt)>;
 /// Callback to open the "New Prompt" dialog.
 pub type OnAddClick = Rc<dyn Fn()>;
 
@@ -27,6 +30,9 @@ pub struct PopupWindow {
     prompt_list: ListBox,
     status_label: Label,
     prompts: Rc<RefCell<Vec<Prompt>>>,
+    on_prompt_select: OnPromptSelect,
+    on_edit_click: OnPromptAction,
+    on_delete_click: OnPromptAction,
 }
 
 impl PopupWindow {
@@ -36,6 +42,8 @@ impl PopupWindow {
         conn: Connection,
         on_prompt_select: OnPromptSelect,
         on_add_click: OnAddClick,
+        on_edit_click: OnPromptAction,
+        on_delete_click: OnPromptAction,
     ) -> Self {
         let window = ApplicationWindow::builder()
             .application(app)
@@ -61,25 +69,28 @@ impl PopupWindow {
         let main_box = GtkBox::new(Orientation::Vertical, 0);
         window.set_child(Some(&main_box));
 
-        // Top bar with + button
-        let top_bar = GtkBox::new(Orientation::Horizontal, 0);
+        // Search entry + add button
+        let top_bar = GtkBox::new(Orientation::Horizontal, 6);
         top_bar.set_hexpand(true);
-        top_bar.set_margin_top(8);
-        top_bar.set_margin_end(8);
-        top_bar.set_margin_start(8);
+        top_bar.set_margin_top(6);
+        top_bar.set_margin_end(6);
+        top_bar.set_margin_start(6);
+        top_bar.set_margin_bottom(4);
+
+        let search_entry = SearchEntry::builder()
+            .name("search-entry")
+            .placeholder_text("Filter prompts...")
+            .hexpand(true)
+            .build();
 
         let add_btn = Button::builder().name("add-button").label("+").build();
+        add_btn.set_tooltip_text(Some("Add prompt"));
         add_btn.connect_clicked(move |_| {
             on_add_click();
         });
+        top_bar.append(&search_entry);
         top_bar.append(&add_btn);
         main_box.append(&top_bar);
-
-        // Search entry
-        let search_entry = SearchEntry::builder()
-            .name("search-entry")
-            .placeholder_text("Type to filter prompts...")
-            .build();
 
         // Prompt list in a scrolled window
         let prompt_list = ListBox::builder()
@@ -99,7 +110,6 @@ impl PopupWindow {
             .halign(Align::Start)
             .build();
 
-        main_box.append(&search_entry);
         main_box.append(&scrolled);
         main_box.append(&status_label);
 
@@ -123,8 +133,7 @@ impl PopupWindow {
 
         let map_search_entry = search_entry.clone();
         window.connect_map(move |window| {
-            center_window_on_screen(window);
-            keep_window_above(window);
+            window_hints::apply_now(window, POPUP_DEFAULT_WIDTH, POPUP_DEFAULT_HEIGHT);
             gtk4::prelude::GtkWindowExt::set_focus(window, Some(&map_search_entry));
             map_search_entry.grab_focus();
         });
@@ -135,15 +144,17 @@ impl PopupWindow {
         let prompts_clone = Rc::clone(&prompts_rc);
         let prompt_list_clone = prompt_list.clone();
 
-        // Enter key on the list activates selected row
+        // Enter key on the list activates selected row.
         let list_key_ctrl = EventControllerKey::new();
         list_key_ctrl.connect_key_pressed(move |_, key, _, _| {
             if key == gdk::Key::Return {
                 if let Some(row) = prompt_list_clone.selected_row() {
-                    let name = row.widget_name().to_string();
+                    let id = row.widget_name().parse::<i64>().ok();
                     let prompts = prompts_clone.borrow();
-                    if let Some(prompt) = prompts.iter().find(|p| p.name == name) {
-                        select_cb(&prompt.name, &prompt.content);
+                    if let Some(id) = id {
+                        if let Some(prompt) = prompts.iter().find(|prompt| prompt.id == id) {
+                            select_cb(prompt);
+                        }
                     }
                 }
                 glib::Propagation::Stop
@@ -153,31 +164,15 @@ impl PopupWindow {
         });
         prompt_list.add_controller(list_key_ctrl);
 
-        // Single-click activates selected row
-        let select_cb2 = Rc::clone(&on_prompt_select);
-        let prompts_clone2 = Rc::clone(&prompts_rc);
-        let prompt_list_clone2 = prompt_list.clone();
-        let click_gesture = gtk4::GestureClick::new();
-        click_gesture.connect_released(move |_, n_press, _, _| {
-            if n_press == 1 {
-                if let Some(row) = prompt_list_clone2.selected_row() {
-                    let name = row.widget_name().to_string();
-                    let prompts = prompts_clone2.borrow();
-                    if let Some(prompt) = prompts.iter().find(|p| p.name == name) {
-                        select_cb2(&prompt.name, &prompt.content);
-                    }
-                }
-            }
-        });
-        prompt_list.add_controller(click_gesture);
-
-        // ── State & construction ─────────────────────────────────────────
         let mut popup = Self {
             window,
             search_entry: search_entry.clone(),
             prompt_list: prompt_list.clone(),
             status_label: status_label.clone(),
             prompts: Rc::clone(&prompts_rc),
+            on_prompt_select: Rc::clone(&on_prompt_select),
+            on_edit_click: Rc::clone(&on_edit_click),
+            on_delete_click: Rc::clone(&on_delete_click),
         };
 
         // Filter search entry changes
@@ -186,36 +181,19 @@ impl PopupWindow {
         let search_entry_clone = search_entry.clone();
         let status_label_clone = status_label.clone();
         let prompts_filter_clone = Rc::clone(&prompts_rc);
+        let select_filter = Rc::clone(&on_prompt_select);
+        let edit_filter = Rc::clone(&on_edit_click);
+        let delete_filter = Rc::clone(&on_delete_click);
         search_entry.connect_search_changed(move |_| {
-            // Re-run the update list logic manually in closure
-            while let Some(child) = prompt_list_filter.first_child() {
-                prompt_list_filter.remove(&child);
-            }
-            let query = search_entry_clone.text().to_string();
-            let prompts = prompts_filter_clone.borrow();
-            let filtered: Vec<&Prompt> = if query.is_empty() {
-                prompts.iter().collect()
-            } else {
-                prompts
-                    .iter()
-                    .filter(|p| fuzzy_match(&p.name, &query) || fuzzy_match(&p.content, &query))
-                    .collect()
-            };
-            for prompt in &filtered {
-                let row = Self::create_prompt_row(prompt);
-                prompt_list_filter.append(&row);
-            }
-            let count = filtered.len();
-            if prompts.is_empty() {
-                status_label_clone.set_text("No prompts yet. Click + to add one.");
-            } else if query.is_empty() || !filtered.is_empty() {
-                status_label_clone.set_text(&format!(
-                    "{count} prompt{plural} available",
-                    plural = if count != 1 { "s" } else { "" }
-                ));
-            } else {
-                status_label_clone.set_text(&format!("No matches for \"{query}\""));
-            }
+            Self::rebuild_list(
+                &prompt_list_filter,
+                &search_entry_clone,
+                &status_label_clone,
+                &prompts_filter_clone,
+                &select_filter,
+                &edit_filter,
+                &delete_filter,
+            );
         });
 
         // Load initial prompts from DB
@@ -232,77 +210,141 @@ impl PopupWindow {
 
     /// Update the visible list based on current search text.
     pub fn update_list(&self) {
-        while let Some(child) = self.prompt_list.first_child() {
-            self.prompt_list.remove(&child);
+        Self::rebuild_list(
+            &self.prompt_list,
+            &self.search_entry,
+            &self.status_label,
+            &self.prompts,
+            &self.on_prompt_select,
+            &self.on_edit_click,
+            &self.on_delete_click,
+        );
+    }
+
+    fn rebuild_list(
+        prompt_list: &ListBox,
+        search_entry: &SearchEntry,
+        status_label: &Label,
+        prompts: &Rc<RefCell<Vec<Prompt>>>,
+        on_select: &OnPromptSelect,
+        on_edit: &OnPromptAction,
+        on_delete: &OnPromptAction,
+    ) {
+        while let Some(child) = prompt_list.first_child() {
+            prompt_list.remove(&child);
         }
 
-        let query = self.search_entry.text().to_string();
-        let prompts = self.prompts.borrow();
+        let query = search_entry.text().to_string();
+        let prompts = prompts.borrow();
 
         let filtered: Vec<&Prompt> = if query.is_empty() {
             prompts.iter().collect()
         } else {
             prompts
                 .iter()
-                .filter(|p| fuzzy_match(&p.name, &query) || fuzzy_match(&p.content, &query))
+                .filter(|prompt| {
+                    fuzzy_match(&prompt.name, &query)
+                        || fuzzy_match(&prompt.description, &query)
+                        || fuzzy_match(&prompt.content, &query)
+                })
                 .collect()
         };
 
         for prompt in &filtered {
-            let row = Self::create_prompt_row(prompt);
-            self.prompt_list.append(&row);
+            let row = Self::create_prompt_row(prompt, on_select, on_edit, on_delete);
+            prompt_list.append(&row);
         }
 
         let count = filtered.len();
         if prompts.is_empty() {
-            self.status_label
-                .set_text("No prompts yet. Click + to add one.");
+            status_label.set_text("No prompts yet. Click + to add one.");
         } else if query.is_empty() || !filtered.is_empty() {
-            self.status_label.set_text(&format!(
+            status_label.set_text(&format!(
                 "{count} prompt{plural} available",
                 plural = if count != 1 { "s" } else { "" }
             ));
         } else {
-            self.status_label
-                .set_text(&format!("No matches for \"{query}\""));
+            status_label.set_text(&format!("No matches for \"{query}\""));
         }
     }
 
     /// Create a ListBoxRow for a prompt.
-    fn create_prompt_row(prompt: &Prompt) -> ListBoxRow {
+    fn create_prompt_row(
+        prompt: &Prompt,
+        on_select: &OnPromptSelect,
+        on_edit: &OnPromptAction,
+        on_delete: &OnPromptAction,
+    ) -> ListBoxRow {
         let row = ListBoxRow::new();
-        let box_ = GtkBox::new(Orientation::Horizontal, 8);
-        box_.set_margin_start(12);
-        box_.set_margin_end(12);
-        box_.set_margin_top(6);
-        box_.set_margin_bottom(6);
+        row.set_widget_name(&prompt.id.to_string());
 
-        // Name label (bold)
+        let row_box = GtkBox::new(Orientation::Horizontal, 8);
+        row_box.add_css_class("prompt-row");
+
+        let text_box = GtkBox::new(Orientation::Horizontal, 8);
+        text_box.set_hexpand(true);
+        text_box.set_valign(Align::Center);
+
         let name_label = Label::builder()
             .label(&prompt.name)
+            .halign(Align::Start)
+            .ellipsize(pango::EllipsizeMode::End)
+            .build();
+        name_label.add_css_class("prompt-title");
+
+        let description_label = Label::builder()
+            .label(&prompt.description)
             .halign(Align::Start)
             .hexpand(true)
             .ellipsize(pango::EllipsizeMode::End)
             .build();
+        description_label.add_css_class("prompt-description");
 
-        // Preview (first 60 chars of content)
-        let preview = if prompt.content.len() > 60 {
-            &prompt.content[..60]
-        } else {
-            &prompt.content
-        };
-        let preview_label = Label::builder()
-            .label(preview)
-            .halign(Align::Start)
-            .ellipsize(pango::EllipsizeMode::End)
+        text_box.append(&name_label);
+        text_box.append(&description_label);
+
+        let select_prompt = prompt.clone();
+        let select_cb = Rc::clone(on_select);
+        let select_gesture = gtk4::GestureClick::new();
+        select_gesture.connect_released(move |_, n_press, _, _| {
+            if n_press == 1 {
+                select_cb(&select_prompt);
+            }
+        });
+        text_box.add_controller(select_gesture);
+
+        let action_box = GtkBox::new(Orientation::Horizontal, 2);
+        action_box.add_css_class("prompt-actions");
+
+        let edit_btn = Button::builder()
+            .name("prompt-edit-button")
+            .icon_name("document-edit-symbolic")
+            .has_frame(false)
             .build();
+        edit_btn.set_tooltip_text(Some("Edit prompt"));
+        let edit_prompt = prompt.clone();
+        let edit_cb = Rc::clone(on_edit);
+        edit_btn.connect_clicked(move |_| {
+            edit_cb(edit_prompt.clone());
+        });
 
-        box_.append(&name_label);
-        box_.append(&preview_label);
-        row.set_child(Some(&box_));
+        let delete_btn = Button::builder()
+            .name("prompt-delete-button")
+            .icon_name("edit-delete-symbolic")
+            .has_frame(false)
+            .build();
+        delete_btn.set_tooltip_text(Some("Delete prompt"));
+        let delete_prompt = prompt.clone();
+        let delete_cb = Rc::clone(on_delete);
+        delete_btn.connect_clicked(move |_| {
+            delete_cb(delete_prompt.clone());
+        });
 
-        // Store prompt name on the row widget for selection callbacks
-        row.set_widget_name(&prompt.name);
+        action_box.append(&edit_btn);
+        action_box.append(&delete_btn);
+        row_box.append(&text_box);
+        row_box.append(&action_box);
+        row.set_child(Some(&row_box));
 
         row
     }
@@ -317,16 +359,12 @@ impl PopupWindow {
     }
 
     fn apply_popup_window_hints(&self) {
-        let window = self.window.clone();
-        let search_entry = self.search_entry.clone();
-
-        glib::idle_add_local_once(move || {
-            center_window_on_screen(&window);
-            keep_window_above(&window);
-            window.present();
-            gtk4::prelude::GtkWindowExt::set_focus(&window, Some(&search_entry));
-            search_entry.grab_focus();
-        });
+        window_hints::present_centered_always_on_top(
+            &self.window,
+            POPUP_DEFAULT_WIDTH,
+            POPUP_DEFAULT_HEIGHT,
+            Some(&self.search_entry),
+        );
     }
 
     /// Hide the popup window.
@@ -339,146 +377,6 @@ impl PopupWindow {
         self.window.is_visible()
     }
 }
-
-#[cfg(target_os = "linux")]
-extern "C" {
-    fn gdk_x11_surface_get_xid(surface: *mut gdk::ffi::GdkSurface) -> std::os::raw::c_ulong;
-}
-
-#[cfg(target_os = "linux")]
-fn x11_window_id(window: &ApplicationWindow) -> Option<std::os::raw::c_ulong> {
-    use gtk4::glib::translate::ToGlibPtr;
-
-    let display = gtk4::prelude::WidgetExt::display(window);
-    if display.type_().name() != "GdkX11Display" {
-        return None;
-    }
-
-    let native = window.native()?;
-    let surface = native.surface()?;
-    let xid = unsafe { gdk_x11_surface_get_xid(surface.to_glib_none().0) };
-    if xid == 0 {
-        None
-    } else {
-        Some(xid)
-    }
-}
-
-#[cfg(target_os = "linux")]
-fn center_window_on_screen(window: &ApplicationWindow) {
-    let Some(xid) = x11_window_id(window) else {
-        return;
-    };
-    let Some(native) = window.native() else {
-        return;
-    };
-    let Some(surface) = native.surface() else {
-        return;
-    };
-    let display = gtk4::prelude::WidgetExt::display(window);
-    let monitor = display
-        .monitor_at_surface(&surface)
-        .or_else(|| display.monitors().item(0).and_downcast::<gdk::Monitor>());
-    let Some(monitor) = monitor else {
-        return;
-    };
-
-    let geometry = monitor.geometry();
-    let width = window.width().max(POPUP_DEFAULT_WIDTH);
-    let height = window.height().max(POPUP_DEFAULT_HEIGHT);
-    let x = geometry.x() + (geometry.width() - width).max(0) / 2;
-    let y = geometry.y() + (geometry.height() - height).max(0) / 2;
-
-    unsafe {
-        let display = x11::xlib::XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return;
-        }
-        x11::xlib::XMoveWindow(display, xid, x, y);
-        x11::xlib::XFlush(display);
-        x11::xlib::XCloseDisplay(display);
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn center_window_on_screen(_: &ApplicationWindow) {}
-
-#[cfg(target_os = "linux")]
-fn keep_window_above(window: &ApplicationWindow) {
-    use std::os::raw::c_long;
-
-    const NET_WM_STATE: &[u8] = b"_NET_WM_STATE\0";
-    const NET_WM_STATE_ABOVE: &[u8] = b"_NET_WM_STATE_ABOVE\0";
-    const NET_WM_STATE_ADD: c_long = 1;
-    const SOURCE_NORMAL_APPLICATION: c_long = 1;
-
-    let Some(xid) = x11_window_id(window) else {
-        return;
-    };
-
-    unsafe {
-        let display = x11::xlib::XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return;
-        }
-
-        let wm_state =
-            x11::xlib::XInternAtom(display, NET_WM_STATE.as_ptr().cast(), x11::xlib::False);
-        let wm_state_above = x11::xlib::XInternAtom(
-            display,
-            NET_WM_STATE_ABOVE.as_ptr().cast(),
-            x11::xlib::False,
-        );
-        if wm_state == 0 || wm_state_above == 0 {
-            x11::xlib::XCloseDisplay(display);
-            return;
-        }
-
-        x11::xlib::XChangeProperty(
-            display,
-            xid,
-            wm_state,
-            x11::xlib::XA_ATOM,
-            32,
-            x11::xlib::PropModeReplace,
-            (&wm_state_above as *const x11::xlib::Atom).cast(),
-            1,
-        );
-
-        let screen = x11::xlib::XDefaultScreen(display);
-        let root = x11::xlib::XRootWindow(display, screen);
-        let mut event = x11::xlib::XEvent::from(x11::xlib::XClientMessageEvent {
-            type_: x11::xlib::ClientMessage,
-            serial: 0,
-            send_event: x11::xlib::True,
-            display,
-            window: xid,
-            message_type: wm_state,
-            format: 32,
-            data: [
-                NET_WM_STATE_ADD,
-                wm_state_above as c_long,
-                0,
-                SOURCE_NORMAL_APPLICATION,
-                0,
-            ]
-            .into(),
-        });
-        x11::xlib::XSendEvent(
-            display,
-            root,
-            x11::xlib::False,
-            x11::xlib::SubstructureRedirectMask | x11::xlib::SubstructureNotifyMask,
-            &mut event,
-        );
-        x11::xlib::XRaiseWindow(display, xid);
-        x11::xlib::XFlush(display);
-        x11::xlib::XCloseDisplay(display);
-    }
-}
-
-#[cfg(not(target_os = "linux"))]
-fn keep_window_above(_: &ApplicationWindow) {}
 
 /// Simple fuzzy matching: checks if characters of `pattern` appear in order in `text`.
 fn fuzzy_match(text: &str, pattern: &str) -> bool {
