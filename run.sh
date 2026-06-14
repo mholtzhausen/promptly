@@ -18,8 +18,8 @@ if [ ! -f "$DIR/lib/libxdo.so" ]; then
     fi
 fi
 
-echo "Building prompt_tray in release mode..."
+echo "Building promptly in release mode..."
 RUSTFLAGS="-L ./lib" cargo build --release
 
-echo "Running prompt_tray..."
-exec "$DIR/target/release/prompt_tray"
+echo "Running promptly..."
+exec "$DIR/target/release/promptly"

@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**Prompt Tray** (`prompt_tray`) — a Linux desktop system-tray application written in Rust + GTK4 that manages prompt templates with variable placeholders. It stores templates in SQLite, provides fuzzy-search selection, auto-generates type-aware input dialogs for template variables, and copies the final interpolated prompt to the clipboard.
+**Promptly** (`promptly`) — a Linux desktop system-tray application written in Rust + GTK4 that manages prompt templates with variable placeholders. It stores templates in SQLite, provides fuzzy-search selection, auto-generates type-aware input dialogs for template variables, and copies the final interpolated prompt to the clipboard.
 
 ## Architecture & Data Flow
 
@@ -29,11 +29,12 @@
 ```
 
 - **No async/await** — fully synchronous GTK4 + blocking I/O. The only event loop is `app.run()`.
-- **Hotkey detection**: `rdev::listen()` in a spawned `std::thread`. Sends `()` through an `mpsc::Sender` to a 50ms polling loop in the GTK main thread (`glib::timeout_add_local`).
+- **Hotkey detection**: On X11 uses `XGrabKey` (via `x11` crate) in a spawned `std::thread`. Falls back to `rdev::listen()` on Wayland (needs `input` group). Sends `()` through an `mpsc::Sender` to a 50ms polling loop in the GTK main thread (`glib::timeout_add_local`).
 - **System tray**: `ksni` crate (freedesktop StatusNotifierItem protocol, works on X11 + Wayland). Created before `app.run()`; lives in a background thread managed by the crate.
 - **Shared popup state**: `Arc<Mutex<Option<PopupWindow>>>` — `None` means hidden, `Some` means visible. Toggled on hotkey.
 - **Per-operation DB connections**: each dialog open/close creates its own `rusqlite::Connection`. No connection pooling.
 - **Window hints**: X11 calls (`XMoveWindow`, `_NET_WM_STATE_ABOVE`) via FFI through `x11` crate. Graceful no-op on Wayland.
+- **Daemonization**: `daemonize()` re-execs with `PROMPTLY_FOREGROUND=1` and exits the parent, so the app runs in the background immediately.
 
 ## Key Directories
 
@@ -47,24 +48,25 @@
 
 | File | Role |
 |---|---|
-| `src/main.rs` | Entry point: GTK4 app init, hotkey thread, popup toggle, inline CRUD dialogs |
+| `src/main.rs` | Entry point: daemonization, GTK4 app init, hotkey thread, popup toggle, inline CRUD dialogs |
 | `src/config.rs` | Constants (`APP_NAME`), path resolution (`config_dir`, `db_path`), embedded CSS |
 | `src/db.rs` | `Prompt` struct, SQLite CRUD (`init_db`, `upsert_prompt`, `load_prompts`, `search_prompts`) |
 | `src/prompt_parser.rs` | `Variable` struct, `VarType` enum, regex-based `parse_variables` + `interpolate` |
 | `src/popup.rs` | `PopupWindow`: GTK4 ListBox + fuzzy search, Rc<RefCell<Vec<Prompt>>> state |
 | `src/variable_dialog.rs` | `show_variable_dialog()`: type-aware inputs, live preview, clipboard copy |
 | `src/window_hints.rs` | X11-only `present_centered_always_on_top`: centering + always-on-top via raw Xlib |
-| `src/tray.rs` | `PromptTray` (ksni), `TrayState` wrapper with `mpsc::Sender<()>` for show events |
+| `src/tray.rs` | `PromptlyTray` (ksni), `TrayState` wrapper with `mpsc::Sender<()>` for show events |
 
 ## Development Commands
 
 Build, test, lint, run via Makefile:
 
 ```bash
-make run       # build + run (release mode, with libxdo shim)
+make run       # build + run (release mode, with libxdo shim; auto-daemonizes)
 make build     # cargo build --release with RUSTFLAGS=-L ./lib
 make test      # cargo test with RUSTFLAGS=-L ./lib
 make clean     # rm -rf ./lib/ && cargo clean
+make install   # copy to /usr/local/bin (handles restarting running instance)
 ```
 
 Convenience script: `./run.sh` (same as `make run`, bash-only).
@@ -73,7 +75,7 @@ Convenience script: `./run.sh` (same as `make run`, bash-only).
 
 | File | Description |
 |---|---|
-| `Cargo.toml` | Package: `prompt_tray` v0.1.0, edition 2021, 14+ direct deps |
+| `Cargo.toml` | Package: `promptly` v0.1.0, edition 2021, 15 direct deps |
 | `Makefile` | Build targets with libxdo linker shim creation |
 | `run.sh` | Dev launch script (bash, ensures libxdo symlink) |
 
@@ -103,6 +105,8 @@ Convenience script: `./run.sh` (same as `make run`, bash-only).
 - `anyhow::Result<T>` everywhere — no custom error types.
 - DB failures in hotkey handler: `log::error!` + `std::process::exit(1)`.
 - Hotkey listener errors: `log::warn!` — app continues.
+- Daemonize `current_exe` panic: fails with `expect` if binary path is inaccessible (fatal, exits).
+- X11 hotkey: `XOpenDisplay` returning null → falls back to rdev silently; `XGrabKey` failure on Wayland → logged fallback.
 - **No-variable copy path**: `gdk::Display::default()` → `None` logs error and shows user-facing notification (`"Prompt not copied"`). Variable dialog copy uses GDK clipboard via `WidgetExt::display()` — no error branch needed (`gdk4::Clipboard::set_text` returns `()` in 0.8.2).
 
 ### State Management

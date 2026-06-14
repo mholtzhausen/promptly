@@ -1,8 +1,8 @@
 [package]
-name = "prompt_tray"
+name = "promptly"
 version = "0.1.0"
 edition = "2021"
-description = "System-tray prompt template manager with fuzzy search and variable interpolation"
+description = "System-tray prompt manager with fuzzy search and variable interpolation"
 
 [dependencies]
 gtk4 = "0.8"

@@ -1,4 +1,4 @@
-.PHONY: all build run test clean
+.PHONY: all build run test clean install
 
 all: build
 
@@ -18,7 +18,7 @@ build: libxdo
 	RUSTFLAGS="-L ./lib" cargo build --release
 
 run: build
-	./target/release/prompt_tray
+	./target/release/promptly
 
 test: libxdo
 	RUSTFLAGS="-L ./lib" cargo test
@@ -26,3 +26,12 @@ test: libxdo
 clean:
 	rm -rf lib
 	cargo clean
+
+install: build
+	@RUNNING=$$(pgrep -x promptly > /dev/null 2>&1 && echo 1 || echo 0); \
+	sudo cp target/release/promptly /usr/local/bin/; \
+	if [ "$$RUNNING" = "1" ]; then \
+		echo "Stopping old promptly and restarting..."; \
+		pkill promptly; \
+		/usr/local/bin/promptly; \
+	fi

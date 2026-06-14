@@ -1385,7 +1385,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "prompt_tray"
+name = "promptly"
 version = "0.1.0"
 dependencies = [
  "anyhow",

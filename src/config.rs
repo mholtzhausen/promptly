@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-pub const APP_NAME: &str = "prompt_tray";
+pub const APP_NAME: &str = "promptly";
 
 pub fn config_dir() -> PathBuf {
     let dir = dirs_next::config_dir().unwrap_or_else(|| PathBuf::from("."));

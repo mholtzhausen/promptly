@@ -1,4 +1,4 @@
-//! Prompt Tray Manager — system-tray app for managing prompt templates.
+//! Promptly — system-tray app for managing prompt templates.
 //!
 //! Global shortcut: Ctrl+Alt+Space toggles the popup window.
 //! Variables syntax: {{name|type|default|description}}
@@ -17,7 +17,26 @@ use gtk4::{gdk, EventControllerKey};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
+/// Detach from the terminal by re-execing with `PROMPTLY_FOREGROUND=1`.
+/// The parent exits immediately; the child keeps running in the background.
+fn daemonize() {
+    if std::env::var("PROMPTLY_FOREGROUND").is_ok() {
+        return;
+    }
+    let exe = std::env::current_exe().expect("failed to get current exe path");
+    let _child = std::process::Command::new(&exe)
+        .env("PROMPTLY_FOREGROUND", "1")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to daemonize");
+    // Parent exits immediately; child lives on.
+    std::process::exit(0);
+}
+
 fn main() -> Result<()> {
+    daemonize();
     env_logger::init();
 
     // ── Ensure config directory exists ───────────────────────────────
@@ -25,7 +44,7 @@ fn main() -> Result<()> {
 
     // ── GTK Application (hidden window for tray + popup) ─────────────
     let app = gtk4::Application::builder()
-        .application_id("com.prompt_tray.app")
+        .application_id("com.promptly.app")
         .build();
     // Keep the background app alive even when no GTK window is visible.
     let _hold_guard = app.hold();
@@ -84,8 +103,108 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-/// Register the global Ctrl+Alt+Space hotkey using rdev.
+/// Register the global Ctrl+Alt+Space hotkey.
+///
+/// On X11: uses `XGrabKey` (no special permissions needed).
+/// On Wayland/fallback: uses rdev evdev (requires `input` group membership).
 fn register_global_hotkey(tx: std::sync::mpsc::Sender<()>) {
+    // Try X11 XGrabKey first — works on X11 without `input` group permissions.
+    #[cfg(target_os = "linux")]
+    {
+        if register_x11_grab(&tx) {
+            return;
+        }
+        log::warn!("X11 hotkey grab failed, falling back to rdev evdev...");
+    }
+
+    // Fallback: rdev (works on Wayland and when input group is available)
+    register_rdev_hotkey(tx);
+}
+
+/// Register Ctrl+Alt+Space via X11 `XGrabKey`. Returns true on success.
+#[cfg(target_os = "linux")]
+fn register_x11_grab(tx: &std::sync::mpsc::Sender<()>) -> bool {
+    use std::os::raw::{c_int, c_uint};
+    use x11::xlib;
+
+    unsafe {
+        let display = xlib::XOpenDisplay(std::ptr::null());
+        if display.is_null() {
+            return false;
+        }
+
+        let root = xlib::XDefaultRootWindow(display);
+        // XK_space = 0x0020 (Latin 1)
+        let keycode = xlib::XKeysymToKeycode(display, 0x0020);
+        if keycode == 0 {
+            xlib::XCloseDisplay(display);
+            return false;
+        }
+
+        // Base modifiers for Ctrl+Alt
+        let base = (xlib::ControlMask | xlib::Mod1Mask) as c_uint;
+        // Also grab with NumLock (Mod2Mask) and/or CapsLock (LockMask) held,
+        // so the hotkey works regardless of lock state.
+        let modifier_combos = [
+            base,
+            base | xlib::Mod2Mask as c_uint,    // + NumLock
+            base | xlib::LockMask as c_uint,     // + CapsLock
+            base | xlib::Mod2Mask as c_uint | xlib::LockMask as c_uint, // + both
+        ];
+
+        for &mods in &modifier_combos {
+            xlib::XGrabKey(
+                display,
+                keycode as c_int,
+                mods,
+                root,
+                xlib::False,                 // owner_events
+                xlib::GrabModeAsync,          // pointer_mode
+                xlib::GrabModeAsync,          // keyboard_mode
+            );
+        }
+
+        xlib::XFlush(display);
+
+        log::info!("Registered X11 global hotkey Ctrl+Alt+Space (XGrabKey)");
+
+        // Move the raw display pointer as a plain usize through the Send
+        // boundary; X11 connections are not thread-safe by default, but this
+        // listener thread becomes the sole user.
+        let display_ptr = display as usize;
+        let keycode_val = keycode as usize;
+        // Modifier mask to check: any Control + any Alt is sufficient.
+        let base_mods = (xlib::ControlMask | xlib::Mod1Mask) as u32;
+        let tx_clone = tx.clone();
+
+        let thread_body: Box<dyn FnOnce() + Send> = Box::new(move || {
+            let display = display_ptr as *mut xlib::Display;
+            let want_keycode = keycode_val as c_uint;
+            loop {
+                // XNextEvent blocks until an event arrives.
+                let mut event = std::mem::zeroed::<xlib::XEvent>();
+                xlib::XNextEvent(display, &mut event);
+                let event_type = event.type_;
+                if event_type == xlib::KeyPress as c_int {
+                    let state = event.key.state;
+                    let got_keycode = event.key.keycode;
+                    if got_keycode == want_keycode
+                        && (state & base_mods) == base_mods
+                    {
+                        let _ = tx_clone.send(());
+                    }
+                }
+            }
+        });
+
+        std::thread::spawn(thread_body);
+
+        true
+    }
+}
+
+/// Fallback hotkey registration using rdev evdev (needs `input` group on Linux).
+fn register_rdev_hotkey(tx: std::sync::mpsc::Sender<()>) {
     use rdev::{EventType, Key};
 
     // Track modifier state for Ctrl+Alt detection
@@ -94,7 +213,7 @@ fn register_global_hotkey(tx: std::sync::mpsc::Sender<()>) {
     let cp = Arc::clone(&ctrl_pressed);
     let ap = Arc::clone(&alt_pressed);
 
-    log::info!("Registering global hotkey Ctrl+Alt+Space...");
+    log::info!("Registering global hotkey Ctrl+Alt+Space via rdev...");
 
     std::thread::spawn(move || {
         let result = rdev::listen(move |event| {
@@ -120,7 +239,8 @@ fn register_global_hotkey(tx: std::sync::mpsc::Sender<()>) {
 
         if let Err(e) = result {
             log::warn!(
-                "rdev listener error: {:?}. App will still work via tray menu.",
+                "rdev listener error: {:?}. App will still work via tray menu. \
+                 Try adding your user to the `input` group: sudo usermod -aG input $USER",
                 e
             );
         }

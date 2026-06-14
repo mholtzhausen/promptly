@@ -5,13 +5,13 @@ use ksni::blocking::TrayMethods;
 use ksni::{menu::*, MenuItem, Tray};
 use std::sync::mpsc::Sender;
 
-struct PromptTray {
+struct PromptlyTray {
     tx: Sender<()>,
 }
 
-impl Tray for PromptTray {
+impl Tray for PromptlyTray {
     fn id(&self) -> String {
-        "prompt-tray".into()
+        "promptly".into()
     }
 
     fn icon_name(&self) -> String {
@@ -19,7 +19,7 @@ impl Tray for PromptTray {
     }
 
     fn title(&self) -> String {
-        "Prompt Manager".into()
+        "Promptly".into()
     }
 
     fn menu(&self) -> Vec<MenuItem<Self>> {
@@ -48,13 +48,13 @@ impl Tray for PromptTray {
 
 pub struct TrayState {
     // We keep the handle alive so the tray service runs
-    _handle: ksni::blocking::Handle<PromptTray>,
+    _handle: ksni::blocking::Handle<PromptlyTray>,
 }
 
 impl TrayState {
     /// Build and show a system tray icon using `ksni`.
     pub fn build(tx: Sender<()>) -> Result<Self> {
-        let tray = PromptTray { tx };
+        let tray = PromptlyTray { tx };
         tray.spawn()
             .map_err(|e| {
                 anyhow::anyhow!(
