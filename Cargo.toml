@@ -1,0 +1,30 @@
+[package]
+name = "prompt_tray"
+version = "0.1.0"
+edition = "2021"
+description = "System-tray prompt template manager with fuzzy search and variable interpolation"
+
+[dependencies]
+gtk4 = "0.8"
+glib = "0.19"
+gio = "0.19"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rdev = "0.5"
+arboard = "3.4"
+anyhow = "1"
+env_logger = "0.11"
+log = "0.4"
+regex = "1"
+ksni = { version = "0.3", features = ["blocking"] }
+notify-rust = "4"
+dirs-next = "2"
+x11 = "2.21"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+opt-level = 2
+lto = true
