@@ -2,8 +2,8 @@
 
 use gtk4::prelude::*;
 use gtk4::{
-    Align, Box as GtkBox, Button, ComboBoxText, Dialog, Entry, Label, Orientation, ScrolledWindow,
-    SpinButton, TextBuffer, TextView, Window,
+    gdk, glib, Align, Box as GtkBox, Button, ComboBoxText, Dialog, Entry, EventControllerKey, Label,
+    Orientation, ScrolledWindow, SpinButton, TextBuffer, TextView, Window,
 };
 use std::rc::Rc;
 
@@ -15,6 +15,7 @@ const VARIABLE_DIALOG_WIDTH: i32 = 460;
 const VARIABLE_DIALOG_HEIGHT: i32 = 560;
 const PROMPT_EDITOR_HEIGHT: i32 = 150;
 
+const VARIABLE_MULTILINE_HEIGHT: i32 = 100;
 /// Show a variable input dialog for the given template and variables.
 /// On submit, calls `on_copy` with the interpolated result.
 pub fn show_variable_dialog(
@@ -30,6 +31,18 @@ pub fn show_variable_dialog(
         .modal(true)
         .default_width(VARIABLE_DIALOG_WIDTH)
         .build();
+    // ── Escape key closes dialog ──────────────────────────────────────
+    let escape_controller = EventControllerKey::new();
+    let dialog_esc = dialog.clone();
+    escape_controller.connect_key_pressed(move |_, key, _, _| {
+        if key == gdk::Key::Escape {
+            dialog_esc.close();
+            glib::Propagation::Stop
+        } else {
+            glib::Propagation::Proceed
+        }
+    });
+    dialog.add_controller(escape_controller);
     // Cap dialog height to 85% of the parent monitor's work area
     let default_height = parent
         .surface()
@@ -130,9 +143,20 @@ pub fn show_variable_dialog(
                     .wrap_mode(gtk4::WrapMode::WordChar)
                     .accepts_tab(false)
                     .hexpand(true)
-                    .vexpand(false)
+                    .vexpand(true)
                     .build();
-                text_view.into()
+                let text_view_clone = text_view.clone();
+                let scrolled = ScrolledWindow::builder()
+                    .child(&text_view)
+                    .min_content_height(VARIABLE_MULTILINE_HEIGHT)
+                    .propagate_natural_width(true)
+                    .build();
+                // Keep the TextView reference for input tracking (downcast target)
+                // but append the ScrolledWindow to the layout.
+                var_box.append(&scrolled);
+                input_box.append(&var_box);
+                inputs.push((var.name.clone(), var.var_type.clone(), text_view_clone.upcast::<gtk4::Widget>()));
+                continue;
             }
         };
 
@@ -181,7 +205,7 @@ pub fn show_variable_dialog(
     // Buttons row
     let button_box = GtkBox::new(Orientation::Horizontal, 8);
     button_box.set_halign(Align::End);
-    button_box.set_margin_top(12);
+    button_box.set_margin_top(8);
 
     let cancel_btn = Button::builder()
         .name("cancel-button")
@@ -204,16 +228,8 @@ pub fn show_variable_dialog(
     copy_btn.connect_clicked(move |_| {
         let result = get_buffer_text(&prompt_buffer_copy);
 
-        match arboard::Clipboard::new() {
-            Ok(mut clipboard) => {
-                if let Err(e) = clipboard.set_text(&result) {
-                    log::error!("Failed to copy to clipboard: {}", e);
-                }
-            }
-            Err(e) => {
-                log::error!("Failed to create clipboard: {}", e);
-            }
-        }
+        let display = gtk4::prelude::WidgetExt::display(&dialog_copy_clone);
+        display.clipboard().set_text(&result);
 
         on_copy_rc(&result);
         dialog_copy_clone.close();

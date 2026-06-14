@@ -55,7 +55,14 @@ impl TrayState {
     /// Build and show a system tray icon using `ksni`.
     pub fn build(tx: Sender<()>) -> Result<Self> {
         let tray = PromptTray { tx };
-        let handle = tray.spawn()?;
-        Ok(Self { _handle: handle })
+        tray.spawn()
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "{}. Install a tray StatusNotifierHost (e.g. gnome-shell-extension-appindicator, \
+                     KDE's statusnotifierwatcher, or another DBus status notifier provider)",
+                    e
+                )
+            })
+            .map(|handle| Self { _handle: handle })
     }
 }

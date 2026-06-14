@@ -96,8 +96,8 @@ button#add-button:hover, button#copy-button:hover {
 
 /* Dialog buttons: smaller */
 button#copy-button {
-    min-height: 26px;
-    padding: 2px 8px;
+    min-height: 24px;
+    padding: 2px 6px;
 }
 
 button#prompt-delete-confirm-button {
@@ -109,7 +109,7 @@ button#prompt-delete-confirm-button {
 
 button#cancel-button {
     border-radius: 6px;
-    padding: 4px 10px;
+    padding: 3px 8px;
 }
 
 entry.variable-entry, textview.variable-textview text {

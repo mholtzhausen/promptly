@@ -13,6 +13,7 @@ mod window_hints;
 
 use anyhow::Result;
 use gtk4::prelude::*;
+use gtk4::{gdk, EventControllerKey};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
@@ -194,21 +195,20 @@ fn handle_prompt_select(
 
     if variables.is_empty() {
         // No variables — copy immediately and show notification
-        let result = prompt.content.clone();
-        match arboard::Clipboard::new() {
-            Ok(mut clipboard) => {
-                if let Err(e) = clipboard.set_text(&result) {
-                    log::error!("Failed to copy: {}", e);
-                }
+        let result = prompt.content.as_str();
+        match gdk::Display::default() {
+            Some(display) => {
+                display.clipboard().set_text(result);
+                show_notification(
+                    "Prompt copied",
+                    &format!("'{}' copied to clipboard", prompt.name),
+                );
             }
-            Err(e) => {
-                log::error!("Failed to create clipboard: {}", e);
+            None => {
+                log::error!("Failed to access clipboard: no default GDK display");
+                show_notification("Prompt not copied", "Could not access the system clipboard.");
             }
         }
-        show_notification(
-            "Prompt copied",
-            &format!("'{}' copied to clipboard", prompt.name),
-        );
     } else {
         // Show variable input dialog
         let ps = Arc::clone(popup_state);
@@ -268,6 +268,19 @@ fn show_prompt_dialog(
         .transient_for(&parent)
         .modal(true)
         .build();
+
+    // ── Escape key closes dialog ──────────────────────────────────────
+    let escape_controller = EventControllerKey::new();
+    let dialog_esc = dialog.clone();
+    escape_controller.connect_key_pressed(move |_, key, _, _| {
+        if key == gdk::Key::Escape {
+            dialog_esc.close();
+            gtk4::glib::Propagation::Stop
+        } else {
+            gtk4::glib::Propagation::Proceed
+        }
+    });
+    dialog.add_controller(escape_controller);
 
     let content_area = dialog.content_area();
     let main_box = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
@@ -431,6 +444,19 @@ fn show_delete_confirmation(
         .transient_for(&parent)
         .modal(true)
         .build();
+
+    // ── Escape key closes dialog ──────────────────────────────────────
+    let escape_controller = EventControllerKey::new();
+    let dialog_esc = dialog.clone();
+    escape_controller.connect_key_pressed(move |_, key, _, _| {
+        if key == gdk::Key::Escape {
+            dialog_esc.close();
+            gtk4::glib::Propagation::Stop
+        } else {
+            gtk4::glib::Propagation::Proceed
+        }
+    });
+    dialog.add_controller(escape_controller);
     let content_area = dialog.content_area();
     let main_box = gtk4::Box::new(gtk4::Orientation::Vertical, 12);
     main_box.set_margin_start(14);

@@ -24,9 +24,7 @@
                             │   └────┬──────┘   │
                             │        │          │
                             │   ┌────▼──────┐   │
-                            │   │ Clipboard │   │
-                            │   │ (arboard) │   │
-                            │   └───────────┘   │
+                            │   │ (GDK)     │
                             └─────────────────┘
 ```
 
@@ -105,7 +103,7 @@ Convenience script: `./run.sh` (same as `make run`, bash-only).
 - `anyhow::Result<T>` everywhere — no custom error types.
 - DB failures in hotkey handler: `log::error!` + `std::process::exit(1)`.
 - Hotkey listener errors: `log::warn!` — app continues.
-- Clipboard failures: `log::error!` — no crash, no user-facing error.
+- **No-variable copy path**: `gdk::Display::default()` → `None` logs error and shows user-facing notification (`"Prompt not copied"`). Variable dialog copy uses GDK clipboard via `WidgetExt::display()` — no error branch needed (`gdk4::Clipboard::set_text` returns `()` in 0.8.2).
 
 ### State Management
 - Shared mutable state: `Rc<RefCell<T>>` for single-threaded GTK closures (e.g., `Rc<RefCell<Vec<Prompt>>>` inside `PopupWindow`).
