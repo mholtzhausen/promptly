@@ -144,25 +144,27 @@ impl PopupWindow {
         let prompts_clone = Rc::clone(&prompts_rc);
         let prompt_list_clone = prompt_list.clone();
 
-        // Enter key on the list activates selected row.
+        // Enter/Up/Down key on the list activates/navigates selected row.
         let list_key_ctrl = EventControllerKey::new();
         list_key_ctrl.connect_key_pressed(move |_, key, _, _| {
-            if key == gdk::Key::Return {
-                if let Some(row) = prompt_list_clone.selected_row() {
-                    let id = row.widget_name().parse::<i64>().ok();
-                    let prompts = prompts_clone.borrow();
-                    if let Some(id) = id {
-                        if let Some(prompt) = prompts.iter().find(|prompt| prompt.id == id) {
-                            select_cb(prompt);
+            match key {
+                gdk::Key::Return => {
+                    if let Some(row) = prompt_list_clone.selected_row() {
+                        let id = row.widget_name().parse::<i64>().ok();
+                        let prompts = prompts_clone.borrow();
+                        if let Some(id) = id {
+                            if let Some(prompt) = prompts.iter().find(|prompt| prompt.id == id) {
+                                select_cb(prompt);
+                            }
                         }
                     }
                 }
-                glib::Propagation::Stop
-            } else {
-                glib::Propagation::Proceed
+                gdk::Key::Down => navigate_list(&prompt_list_clone, true),
+                gdk::Key::Up => navigate_list(&prompt_list_clone, false),
+                _ => {}
             }
+            glib::Propagation::Stop
         });
-        prompt_list.add_controller(list_key_ctrl);
 
         let mut popup = Self {
             window,
@@ -255,6 +257,12 @@ impl PopupWindow {
             prompt_list.append(&row);
         }
 
+        // Auto-select first row so arrow keys have a starting point.
+        if let Some(first) = prompt_list.first_child() {
+            if let Some(list_box_row) = first.downcast_ref::<ListBoxRow>() {
+                prompt_list.select_row(Some(list_box_row));
+            }
+        }
         let count = filtered.len();
         if prompts.is_empty() {
             status_label.set_text("No prompts yet. Click + to add one.");
@@ -390,4 +398,46 @@ fn fuzzy_match(text: &str, pattern: &str) -> bool {
         }
     }
     true
+}
+
+/// Navigate the ListBox selection by one row (down or up), wrapping around.
+fn navigate_list(list: &ListBox, down: bool) {
+    let current_name = list.selected_row().map(|r| r.widget_name());
+
+    // Collect all rows as owned Widgets for indexing.
+    let mut widgets: Vec<gtk4::Widget> = Vec::new();
+    if let Some(first) = list.first_child() {
+        widgets.push(first);
+        loop {
+            let last_widget = widgets.last().cloned().unwrap();
+            match last_widget.next_sibling() {
+                Some(next) => widgets.push(next),
+                None => break,
+            }
+        }
+    }
+
+    if widgets.is_empty() {
+        return;
+    }
+
+    // Find current index by matching widget_name.
+    let current_idx = match &current_name {
+        Some(name) => widgets.iter()
+            .position(|w| w.widget_name() == *name)
+            .unwrap_or(0),
+        None => 0,
+    };
+
+    // Compute new index with wrapping.
+    let len = widgets.len();
+    let new_idx = if down {
+        (current_idx + 1) % len
+    } else {
+        (len + current_idx - 1) % len
+    };
+
+    if let Some(row) = widgets[new_idx].downcast_ref::<ListBoxRow>() {
+        list.select_row(Some(row));
+    }
 }
