@@ -29,6 +29,7 @@ pub enum IpcCommand {
     GetHistoryEntry(HistoryIdPayload),
     DeleteHistoryEntry(HistoryIdPayload),
     PruneHistory(PruneHistoryPayload),
+    SetWindowTitle(SetWindowTitlePayload),
     HideWindow,
     Quit,
 }
@@ -91,6 +92,12 @@ pub struct PruneHistoryPayload {
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SetWindowTitlePayload {
+    pub title: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum CopyMessageKind {
     NoVariables,
     Variables,
@@ -138,6 +145,7 @@ pub struct HandledIpc {
     pub response_json: String,
     pub hide_window: bool,
     pub quit_app: bool,
+    pub window_title: Option<String>,
 }
 
 /// Desktop side-effects the IPC layer needs: notifications and clipboard writes.
@@ -190,16 +198,19 @@ impl IpcBackend {
                     response_json: serde_json::to_string(&resp).unwrap(),
                     hide_window: false,
                     quit_app: false,
+                    window_title: None,
                 };
             }
         };
 
         let id = request.id.clone();
-        let (response, hide_window, quit_app) = self.dispatch(request.command, effects, &id);
+        let (response, hide_window, quit_app, window_title) =
+            self.dispatch(request.command, effects, &id);
         HandledIpc {
             response_json: response,
             hide_window,
             quit_app,
+            window_title,
         }
     }
 
@@ -208,18 +219,62 @@ impl IpcBackend {
         command: IpcCommand,
         effects: &impl DesktopEffects,
         id: &str,
-    ) -> (String, bool, bool) {
+    ) -> (String, bool, bool, Option<String>) {
         match command {
-            IpcCommand::ListPrompts => self.cmd_list_prompts(id),
-            IpcCommand::SavePrompt(p) => self.cmd_save_prompt(id, p, effects),
-            IpcCommand::DeletePrompt(p) => self.cmd_delete_prompt(id, p, effects),
-            IpcCommand::VariablesForTemplate(p) => self.cmd_variables(id, p),
-            IpcCommand::Interpolate(p) => self.cmd_interpolate(id, p),
-            IpcCommand::CopyPrompt(p) => self.cmd_copy_prompt(id, p, effects),
-            IpcCommand::ListHistory => self.cmd_list_history(id),
-            IpcCommand::GetHistoryEntry(p) => self.cmd_get_history_entry(id, p),
-            IpcCommand::DeleteHistoryEntry(p) => self.cmd_delete_history_entry(id, p),
-            IpcCommand::PruneHistory(p) => self.cmd_prune_history(id, p),
+            IpcCommand::ListPrompts => {
+                let (response, hide_window, quit_app) = self.cmd_list_prompts(id);
+                (response, hide_window, quit_app, None)
+            }
+            IpcCommand::SavePrompt(p) => {
+                let (response, hide_window, quit_app) = self.cmd_save_prompt(id, p, effects);
+                (response, hide_window, quit_app, None)
+            }
+            IpcCommand::DeletePrompt(p) => {
+                let (response, hide_window, quit_app) = self.cmd_delete_prompt(id, p, effects);
+                (response, hide_window, quit_app, None)
+            }
+            IpcCommand::VariablesForTemplate(p) => {
+                let (response, hide_window, quit_app) = self.cmd_variables(id, p);
+                (response, hide_window, quit_app, None)
+            }
+            IpcCommand::Interpolate(p) => {
+                let (response, hide_window, quit_app) = self.cmd_interpolate(id, p);
+                (response, hide_window, quit_app, None)
+            }
+            IpcCommand::CopyPrompt(p) => {
+                let (response, hide_window, quit_app) = self.cmd_copy_prompt(id, p, effects);
+                (response, hide_window, quit_app, None)
+            }
+            IpcCommand::ListHistory => {
+                let (response, hide_window, quit_app) = self.cmd_list_history(id);
+                (response, hide_window, quit_app, None)
+            }
+            IpcCommand::GetHistoryEntry(p) => {
+                let (response, hide_window, quit_app) = self.cmd_get_history_entry(id, p);
+                (response, hide_window, quit_app, None)
+            }
+            IpcCommand::DeleteHistoryEntry(p) => {
+                let (response, hide_window, quit_app) = self.cmd_delete_history_entry(id, p);
+                (response, hide_window, quit_app, None)
+            }
+            IpcCommand::PruneHistory(p) => {
+                let (response, hide_window, quit_app) = self.cmd_prune_history(id, p);
+                (response, hide_window, quit_app, None)
+            }
+            IpcCommand::SetWindowTitle(p) => {
+                let resp = IpcEnvelope {
+                    id: id.to_string(),
+                    ok: true,
+                    data: Some(true),
+                    error: None,
+                };
+                (
+                    serde_json::to_string(&resp).unwrap(),
+                    false,
+                    false,
+                    Some(p.title),
+                )
+            }
             IpcCommand::HideWindow => {
                 let resp = IpcEnvelope {
                     id: id.to_string(),
@@ -227,7 +282,7 @@ impl IpcBackend {
                     data: Some(true),
                     error: None,
                 };
-                (serde_json::to_string(&resp).unwrap(), true, false)
+                (serde_json::to_string(&resp).unwrap(), true, false, None)
             }
             IpcCommand::Quit => {
                 let resp = IpcEnvelope {
@@ -236,7 +291,7 @@ impl IpcBackend {
                     data: Some(true),
                     error: None,
                 };
-                (serde_json::to_string(&resp).unwrap(), false, true)
+                (serde_json::to_string(&resp).unwrap(), false, true, None)
             }
         }
     }
@@ -918,5 +973,26 @@ mod tests {
             r#"{"id":"x","command":"listPrompts"}"#,
         );
         assert_eq!(list["data"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn set_window_title_returns_title_for_host() {
+        let (backend, _f) = backend();
+        let effects = FakeEffects::default();
+        let raw = serde_json::json!({
+            "id": "t1",
+            "command": "setWindowTitle",
+            "payload": { "title": "Promptly | Find a prompt" }
+        })
+        .to_string();
+
+        let handled = backend.handle(&raw, &effects);
+        assert_eq!(
+            handled.window_title.as_deref(),
+            Some("Promptly | Find a prompt")
+        );
+        let resp = serde_json::from_str::<serde_json::Value>(&handled.response_json).unwrap();
+        assert_eq!(resp["ok"], true);
+        assert_eq!(resp["data"], true);
     }
 }

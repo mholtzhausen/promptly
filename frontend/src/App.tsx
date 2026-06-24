@@ -81,6 +81,8 @@ function HistoryTitleText({ title }: { title: string }) {
 
 const PRUNE_KEEP_OPTIONS = [10, 100, 500, 1000] as const;
 
+const TITLE_PREFIX = "Promptly | ";
+
 type View =
   | "list"
   | "editor"
@@ -88,6 +90,39 @@ type View =
   | "variables"
   | "history"
   | "historyDetail";
+
+function windowTitleForView(
+  view: View,
+  ctx: {
+    editingPrompt: Prompt | null;
+    variablePrompt: Prompt | null;
+    deletingPrompt: Prompt | null;
+    historyDetail: HistoryEntry | null;
+  },
+): string {
+  switch (view) {
+    case "list":
+      return `${TITLE_PREFIX}Find a prompt`;
+    case "editor":
+      return ctx.editingPrompt
+        ? `${TITLE_PREFIX}Edit ${ctx.editingPrompt.name}`
+        : `${TITLE_PREFIX}New prompt template`;
+    case "variables":
+      return ctx.variablePrompt
+        ? `${TITLE_PREFIX}Fill out ${ctx.variablePrompt.name}`
+        : `${TITLE_PREFIX}Find a prompt`;
+    case "history":
+      return `${TITLE_PREFIX}Copy history`;
+    case "historyDetail":
+      return ctx.historyDetail
+        ? `${TITLE_PREFIX}View ${ctx.historyDetail.promptName}`
+        : `${TITLE_PREFIX}Copy history`;
+    case "delete":
+      return ctx.deletingPrompt
+        ? `${TITLE_PREFIX}Delete ${ctx.deletingPrompt.name}`
+        : `${TITLE_PREFIX}Find a prompt`;
+  }
+}
 
 export default function App() {
   const [view, setView] = useState<View>("list");
@@ -165,6 +200,16 @@ export default function App() {
   useEffect(() => {
     loadPrompts();
   }, [loadPrompts]);
+
+  useEffect(() => {
+    const title = windowTitleForView(view, {
+      editingPrompt,
+      variablePrompt,
+      deletingPrompt,
+      historyDetail,
+    });
+    request("setWindowTitle", { title }).catch(() => {});
+  }, [view, editingPrompt, variablePrompt, deletingPrompt, historyDetail]);
 
   // Ctrl+Escape quits the application from any view.
   useEffect(() => {

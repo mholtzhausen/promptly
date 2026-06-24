@@ -56,7 +56,7 @@ impl PromptlyWebviewApp {
         let window = {
             use tao::platform::unix::WindowBuilderExtUnix;
             WindowBuilder::new()
-                .with_title("Prompt Manager")
+                .with_title("Promptly | Find a prompt")
                 .with_inner_size(initial_size)
                 .with_visible(false)
                 .with_decorations(true)
@@ -66,7 +66,7 @@ impl PromptlyWebviewApp {
         };
         #[cfg(not(target_os = "linux"))]
         let window = WindowBuilder::new()
-            .with_title("Prompt Manager")
+            .with_title("Promptly | Find a prompt")
             .with_inner_size(initial_size)
             .with_visible(false)
             .with_decorations(true)
@@ -231,6 +231,9 @@ impl PromptlyWebviewApp {
             "window.__promptlyReceive({});",
             handled.response_json
         ));
+        if let Some(title) = handled.window_title {
+            self.window.set_title(&title);
+        }
         if handled.hide_window {
             self.window.set_visible(false);
         }
