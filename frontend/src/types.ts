@@ -47,6 +47,7 @@ export interface CopyPromptPayload {
   promptId: number | null;
   values: VariableValue[];
   messageKind: CopyMessageKind;
+  skipHistory?: boolean;
 }
 
 export interface CopyPromptResult {
@@ -78,6 +79,11 @@ export interface HistoryEntry {
 
 export interface HistoryIdPayload {
   id: number;
+}
+
+export interface UpdateHistoryEntryPayload {
+  id: number;
+  content: string;
 }
 
 export interface PruneHistoryPayload {

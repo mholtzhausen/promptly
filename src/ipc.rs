@@ -27,6 +27,7 @@ pub enum IpcCommand {
     CopyPrompt(CopyPromptPayload),
     ListHistory,
     GetHistoryEntry(HistoryIdPayload),
+    UpdateHistoryEntry(UpdateHistoryEntryPayload),
     DeleteHistoryEntry(HistoryIdPayload),
     PruneHistory(PruneHistoryPayload),
     SetWindowTitle(SetWindowTitlePayload),
@@ -76,12 +77,21 @@ pub struct CopyPromptPayload {
     pub prompt_id: Option<i64>,
     pub values: Vec<VariableValue>,
     pub message_kind: CopyMessageKind,
+    #[serde(default)]
+    pub skip_history: bool,
 }
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HistoryIdPayload {
     pub id: i64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateHistoryEntryPayload {
+    pub id: i64,
+    pub content: String,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -251,6 +261,10 @@ impl IpcBackend {
             }
             IpcCommand::GetHistoryEntry(p) => {
                 let (response, hide_window, quit_app) = self.cmd_get_history_entry(id, p);
+                (response, hide_window, quit_app, None)
+            }
+            IpcCommand::UpdateHistoryEntry(p) => {
+                let (response, hide_window, quit_app) = self.cmd_update_history_entry(id, p);
                 (response, hide_window, quit_app, None)
             }
             IpcCommand::DeleteHistoryEntry(p) => {
@@ -504,21 +518,25 @@ impl IpcBackend {
                     })
                     .collect();
 
-                let history_result = self.with_db(|conn| {
-                    db::insert_history_if_new(
-                        conn,
-                        &p.text,
-                        p.prompt_id,
-                        &p.prompt_name,
-                        &history_values,
-                    )
-                });
+                let (history_inserted, history_count) = if p.skip_history {
+                    (false, 0)
+                } else {
+                    let history_result = self.with_db(|conn| {
+                        db::insert_history_if_new(
+                            conn,
+                            &p.text,
+                            p.prompt_id,
+                            &p.prompt_name,
+                            &history_values,
+                        )
+                    });
 
-                let (history_inserted, history_count) = match history_result {
-                    Ok(result) => result,
-                    Err(e) => {
-                        log::error!("copyPrompt history insert failed: {}", e);
-                        (false, 0)
+                    match history_result {
+                        Ok(result) => result,
+                        Err(e) => {
+                            log::error!("copyPrompt history insert failed: {}", e);
+                            (false, 0)
+                        }
                     }
                 };
 
@@ -589,6 +607,34 @@ impl IpcBackend {
             Err(e) => {
                 log::error!("getHistoryEntry failed: {}", e);
                 let resp = IpcEnvelope::<db::HistoryEntry> {
+                    id: id.to_string(),
+                    ok: false,
+                    data: None,
+                    error: Some(e.to_string()),
+                };
+                (serde_json::to_string(&resp).unwrap(), false, false)
+            }
+        }
+    }
+
+    fn cmd_update_history_entry(
+        &self,
+        id: &str,
+        p: UpdateHistoryEntryPayload,
+    ) -> (String, bool, bool) {
+        match self.with_db(|conn| db::update_history_entry(conn, p.id, &p.content)) {
+            Ok(()) => {
+                let resp = IpcEnvelope {
+                    id: id.to_string(),
+                    ok: true,
+                    data: Some(true),
+                    error: None,
+                };
+                (serde_json::to_string(&resp).unwrap(), false, false)
+            }
+            Err(e) => {
+                log::error!("updateHistoryEntry failed: {}", e);
+                let resp = IpcEnvelope::<bool> {
                     id: id.to_string(),
                     ok: false,
                     data: None,

@@ -13,6 +13,7 @@ import type {
   HistoryListResult,
   HistoryEntry,
   HistoryIdPayload,
+  UpdateHistoryEntryPayload,
   PruneHistoryPayload,
 } from "./types";
 import "./styles.css";
@@ -148,6 +149,7 @@ export default function App() {
   const [historyQuery, setHistoryQuery] = useState("");
   const [historySelectedIndex, setHistorySelectedIndex] = useState(0);
   const [historyDetail, setHistoryDetail] = useState<HistoryEntry | null>(null);
+  const [historyDetailContent, setHistoryDetailContent] = useState("");
   const [pruneMenuOpen, setPruneMenuOpen] = useState(false);
 
   const searchRef = useRef<HTMLInputElement>(null);
@@ -428,6 +430,7 @@ export default function App() {
       } as HistoryIdPayload);
       if (!entry) return;
       setHistoryDetail(entry);
+      setHistoryDetailContent(entry.content);
       setView("historyDetail");
     } catch {
       // silently ignore
@@ -436,6 +439,7 @@ export default function App() {
 
   const closeHistoryDetail = useCallback(() => {
     setHistoryDetail(null);
+    setHistoryDetailContent("");
     setView("history");
     focusHistorySearch();
   }, [focusHistorySearch]);
@@ -513,6 +517,7 @@ export default function App() {
     messageKind: "noVariables" | "variables",
     promptId: number | null,
     values: VariableValue[],
+    skipHistory = false,
   ) {
     await request("copyPrompt", {
       text,
@@ -520,6 +525,7 @@ export default function App() {
       promptId,
       values,
       messageKind,
+      skipHistory,
     } as CopyPromptPayload);
   }
 
@@ -739,14 +745,23 @@ export default function App() {
 
   async function copyHistoryDetail() {
     if (!historyDetail) return;
+    const edited = historyDetailContent !== historyDetail.content;
     try {
       await copyPrompt(
-        historyDetail.content,
+        historyDetailContent,
         historyDetail.promptName,
         historyDetail.variables.length === 0 ? "noVariables" : "variables",
         historyDetail.promptId,
         historyDetail.variables,
+        true,
       );
+      if (edited) {
+        await request("updateHistoryEntry", {
+          id: historyDetail.id,
+          content: historyDetailContent,
+        } as UpdateHistoryEntryPayload);
+        setHistoryDetail({ ...historyDetail, content: historyDetailContent });
+      }
     } catch {
       // silent
     }
@@ -921,25 +936,30 @@ export default function App() {
         <div className="history-detail-body">
           {historyDetail.variables.length > 0 && (
             <div className="history-variables">
-              <h2 className="history-section-title">Variables used</h2>
-              {historyDetail.variables.map((v) => (
-                <label key={v.name} className="history-variable-row">
-                  <span className="var-name">{v.name}</span>
-                  <textarea
-                    className="mono multiline"
-                    readOnly
-                    value={v.value}
-                  />
-                </label>
-              ))}
+              <table className="history-variables-table">
+                <thead>
+                  <tr>
+                    <th>Variable</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historyDetail.variables.map((v) => (
+                    <tr key={v.name}>
+                      <td className="history-var-name">{v.name}</td>
+                      <td className="history-var-value mono">{v.value}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
           <label className="preview-field history-content-field">
             Resulting prompt
             <textarea
               className="mono multiline preview"
-              readOnly
-              value={historyDetail.content}
+              value={historyDetailContent}
+              onChange={(e) => setHistoryDetailContent(e.target.value)}
             />
           </label>
         </div>

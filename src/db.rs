@@ -273,6 +273,18 @@ pub fn get_history_entry(conn: &Connection, id: i64) -> Result<Option<HistoryEnt
     }))
 }
 
+pub fn update_history_entry(conn: &Connection, id: i64, content: &str) -> Result<()> {
+    let hash = content_hash(content);
+    let updated = conn.execute(
+        "UPDATE prompt_history SET content = ?1, content_hash = ?2 WHERE id = ?3",
+        params![content, hash, id],
+    )?;
+    if updated == 0 {
+        anyhow::bail!("History entry {id} not found");
+    }
+    Ok(())
+}
+
 pub fn delete_history_entry(conn: &Connection, id: i64) -> Result<()> {
     conn.execute("DELETE FROM prompt_history WHERE id = ?1", params![id])?;
     Ok(())
@@ -507,6 +519,10 @@ mod tests {
         let entry = get_history_entry(&conn, id).unwrap().unwrap();
         assert_eq!(entry.content, "content");
         assert_eq!(entry.prompt_name, "tpl");
+
+        update_history_entry(&conn, id, "updated content").unwrap();
+        let updated = get_history_entry(&conn, id).unwrap().unwrap();
+        assert_eq!(updated.content, "updated content");
 
         delete_history_entry(&conn, id).unwrap();
         assert!(get_history_entry(&conn, id).unwrap().is_none());
