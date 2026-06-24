@@ -105,6 +105,18 @@ export default function App() {
     loadPrompts();
   }, [loadPrompts]);
 
+  // Ctrl+Escape quits the application from any view.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || !e.ctrlKey || e.metaKey || e.altKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+      request("quit");
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+
   // Keep the filter input focused whenever the list view is active.
   useEffect(() => {
     if (view !== "list") return;

@@ -26,6 +26,7 @@ pub enum IpcCommand {
     Interpolate(InterpolatePayload),
     CopyPrompt(CopyPromptPayload),
     HideWindow,
+    Quit,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -110,6 +111,7 @@ pub struct VariableDto {
 pub struct HandledIpc {
     pub response_json: String,
     pub hide_window: bool,
+    pub quit_app: bool,
 }
 
 /// Desktop side-effects the IPC layer needs: notifications and clipboard writes.
@@ -161,15 +163,17 @@ impl IpcBackend {
                 return HandledIpc {
                     response_json: serde_json::to_string(&resp).unwrap(),
                     hide_window: false,
+                    quit_app: false,
                 };
             }
         };
 
         let id = request.id.clone();
-        let (response, hide_window) = self.dispatch(request.command, effects, &id);
+        let (response, hide_window, quit_app) = self.dispatch(request.command, effects, &id);
         HandledIpc {
             response_json: response,
             hide_window,
+            quit_app,
         }
     }
 
@@ -178,7 +182,7 @@ impl IpcBackend {
         command: IpcCommand,
         effects: &impl DesktopEffects,
         id: &str,
-    ) -> (String, bool) {
+    ) -> (String, bool, bool) {
         match command {
             IpcCommand::ListPrompts => self.cmd_list_prompts(id),
             IpcCommand::SavePrompt(p) => self.cmd_save_prompt(id, p, effects),
@@ -193,12 +197,21 @@ impl IpcBackend {
                     data: Some(true),
                     error: None,
                 };
-                (serde_json::to_string(&resp).unwrap(), true)
+                (serde_json::to_string(&resp).unwrap(), true, false)
+            }
+            IpcCommand::Quit => {
+                let resp = IpcEnvelope {
+                    id: id.to_string(),
+                    ok: true,
+                    data: Some(true),
+                    error: None,
+                };
+                (serde_json::to_string(&resp).unwrap(), false, true)
             }
         }
     }
 
-    fn cmd_list_prompts(&self, id: &str) -> (String, bool) {
+    fn cmd_list_prompts(&self, id: &str) -> (String, bool, bool) {
         match self.with_db(|conn| db::load_prompts(conn)) {
             Ok(prompts) => {
                 let resp = IpcEnvelope {
@@ -207,7 +220,7 @@ impl IpcBackend {
                     data: Some(prompts),
                     error: None,
                 };
-                (serde_json::to_string(&resp).unwrap(), false)
+                (serde_json::to_string(&resp).unwrap(), false, false)
             }
             Err(e) => {
                 log::error!("listPrompts failed: {}", e);
@@ -217,7 +230,7 @@ impl IpcBackend {
                     data: None,
                     error: Some(e.to_string()),
                 };
-                (serde_json::to_string(&resp).unwrap(), false)
+                (serde_json::to_string(&resp).unwrap(), false, false)
             }
         }
     }
@@ -227,7 +240,7 @@ impl IpcBackend {
         id: &str,
         p: SavePromptPayload,
         effects: &impl DesktopEffects,
-    ) -> (String, bool) {
+    ) -> (String, bool, bool) {
         let name = p.name.trim().to_string();
         let description = p.description.trim().to_string();
         let content = p.content;
@@ -242,7 +255,7 @@ impl IpcBackend {
                 }),
                 error: None,
             };
-            return (serde_json::to_string(&resp).unwrap(), false);
+            return (serde_json::to_string(&resp).unwrap(), false, false);
         }
 
         let result = self.with_db(|conn| {
@@ -276,7 +289,7 @@ impl IpcBackend {
                     }),
                     error: None,
                 };
-                (serde_json::to_string(&resp).unwrap(), false)
+                (serde_json::to_string(&resp).unwrap(), false, false)
             }
             Err(e) => {
                 log::error!("savePrompt failed: {}", e);
@@ -290,7 +303,7 @@ impl IpcBackend {
                     data: None,
                     error: Some(e.to_string()),
                 };
-                (serde_json::to_string(&resp).unwrap(), false)
+                (serde_json::to_string(&resp).unwrap(), false, false)
             }
         }
     }
@@ -300,7 +313,7 @@ impl IpcBackend {
         id: &str,
         p: DeletePromptPayload,
         effects: &impl DesktopEffects,
-    ) -> (String, bool) {
+    ) -> (String, bool, bool) {
         match self.with_db(|conn| db::delete_prompt(conn, p.id)) {
             Ok(()) => {
                 effects.notify(
@@ -313,7 +326,7 @@ impl IpcBackend {
                     data: Some(true),
                     error: None,
                 };
-                (serde_json::to_string(&resp).unwrap(), false)
+                (serde_json::to_string(&resp).unwrap(), false, false)
             }
             Err(e) => {
                 log::error!("deletePrompt failed: {}", e);
@@ -327,12 +340,12 @@ impl IpcBackend {
                     data: None,
                     error: Some(e.to_string()),
                 };
-                (serde_json::to_string(&resp).unwrap(), false)
+                (serde_json::to_string(&resp).unwrap(), false, false)
             }
         }
     }
 
-    fn cmd_variables(&self, id: &str, p: TemplatePayload) -> (String, bool) {
+    fn cmd_variables(&self, id: &str, p: TemplatePayload) -> (String, bool, bool) {
         let vars = prompt_parser::parse_variables(&p.content);
         let dtos: Vec<VariableDto> = vars
             .into_iter()
@@ -359,10 +372,10 @@ impl IpcBackend {
             data: Some(dtos),
             error: None,
         };
-        (serde_json::to_string(&resp).unwrap(), false)
+        (serde_json::to_string(&resp).unwrap(), false, false)
     }
 
-    fn cmd_interpolate(&self, id: &str, p: InterpolatePayload) -> (String, bool) {
+    fn cmd_interpolate(&self, id: &str, p: InterpolatePayload) -> (String, bool, bool) {
         let pairs: Vec<(&str, &str)> = p
             .values
             .iter()
@@ -376,7 +389,7 @@ impl IpcBackend {
             data: Some(result),
             error: None,
         };
-        (serde_json::to_string(&resp).unwrap(), false)
+        (serde_json::to_string(&resp).unwrap(), false, false)
     }
 
     fn cmd_copy_prompt(
@@ -384,7 +397,7 @@ impl IpcBackend {
         id: &str,
         p: CopyPromptPayload,
         effects: &impl DesktopEffects,
-    ) -> (String, bool) {
+    ) -> (String, bool, bool) {
         match effects.copy_text(&p.text) {
             Ok(()) => {
                 let body = match p.message_kind {
@@ -402,7 +415,7 @@ impl IpcBackend {
                     data: Some(true),
                     error: None,
                 };
-                (serde_json::to_string(&resp).unwrap(), false)
+                (serde_json::to_string(&resp).unwrap(), false, false)
             }
             Err(e) => {
                 log::error!("copyPrompt failed: {}", e);
@@ -416,7 +429,7 @@ impl IpcBackend {
                     data: None,
                     error: Some(e.to_string()),
                 };
-                (serde_json::to_string(&resp).unwrap(), false)
+                (serde_json::to_string(&resp).unwrap(), false, false)
             }
         }
     }

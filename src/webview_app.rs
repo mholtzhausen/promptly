@@ -198,5 +198,8 @@ impl PromptlyWebviewApp {
         if handled.hide_window {
             self.window.set_visible(false);
         }
+        if handled.quit_app {
+            std::process::exit(0);
+        }
     }
 }
