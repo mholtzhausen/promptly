@@ -14,6 +14,21 @@ mod window_focus;
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
 
+struct CliOptions {
+    show_on_start: bool,
+}
+
+fn parse_cli() -> CliOptions {
+    let mut show_on_start = false;
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--show" | "-s" => show_on_start = true,
+            _ => {}
+        }
+    }
+    CliOptions { show_on_start }
+}
+
 /// Detach from the terminal by re-execing with `PROMPTLY_FOREGROUND=1`.
 /// The parent exits immediately; the child keeps running in the background.
 fn daemonize() {
@@ -23,6 +38,7 @@ fn daemonize() {
     let exe = std::env::current_exe().expect("failed to get current exe path");
     let _child = std::process::Command::new(&exe)
         .env("PROMPTLY_FOREGROUND", "1")
+        .args(std::env::args().skip(1))
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -33,6 +49,7 @@ fn daemonize() {
 }
 
 fn main() -> Result<()> {
+    let cli = parse_cli();
     daemonize();
     env_logger::init();
 
@@ -68,7 +85,7 @@ fn main() -> Result<()> {
         tray_state,
         config::db_path(),
     )?;
-    webview_app::PromptlyWebviewApp::run(event_loop, app);
+    webview_app::PromptlyWebviewApp::run(event_loop, app, cli.show_on_start);
 }
 
 /// Register the global Ctrl+Alt+Space hotkey.

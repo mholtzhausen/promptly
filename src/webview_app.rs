@@ -5,7 +5,7 @@ use std::cell::Cell;
 use std::path::PathBuf;
 
 use tao::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
-use tao::event::{Event, WindowEvent};
+use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
 use tao::window::WindowBuilder;
 use wry::WebViewBuilder;
@@ -95,9 +95,20 @@ impl PromptlyWebviewApp {
     }
 
     /// Run the event loop until the process exits.
-    pub fn run(event_loop: EventLoop<AppEvent>, state: PromptlyWebviewApp) -> ! {
+    pub fn run(
+        event_loop: EventLoop<AppEvent>,
+        state: PromptlyWebviewApp,
+        show_on_start: bool,
+    ) -> ! {
+        let mut show_on_start = show_on_start;
         event_loop.run(move |event, _target, control_flow| {
             *control_flow = ControlFlow::Wait;
+            if show_on_start {
+                if matches!(&event, Event::NewEvents(StartCause::Init)) {
+                    show_on_start = false;
+                    state.show_window();
+                }
+            }
             match event {
                 Event::UserEvent(AppEvent::ToggleWindow) => state.toggle_window(),
                 Event::UserEvent(AppEvent::Ipc(raw)) => state.handle_ipc(&raw),

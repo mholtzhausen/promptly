@@ -15,4 +15,4 @@ echo "Building promptly in release mode..."
 cargo build --release
 
 echo "Running promptly..."
-exec "$DIR/target/release/promptly"
+exec "$DIR/target/release/promptly" --show

@@ -12,7 +12,7 @@ build: frontend-build
 	cargo build --release
 
 run: build
-	./target/release/promptly
+	./target/release/promptly --show
 
 test: frontend-build
 	cargo test
