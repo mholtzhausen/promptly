@@ -1,6 +1,9 @@
 # Rust build artifacts
 /target/
 
+# Release packaging output
+/dist/
+
 # Frontend build artifacts
 /frontend/node_modules/
 /frontend/dist/
