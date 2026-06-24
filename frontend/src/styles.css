@@ -126,6 +126,7 @@ body {
 #history-list,
 .history-detail-body {
   margin-inline: calc(-1 * var(--pane-padding));
+  padding-bottom: var(--pane-padding);
 }
 
 /* ── Prompt list ─────────────────────────────────────────────────────── */
