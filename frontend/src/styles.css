@@ -26,6 +26,8 @@ body {
   --panel-chrome-border: #ddd9d0;
   --panel-shadow-down: 0 2px 6px rgba(28, 27, 24, 0.07);
   --panel-shadow-up: 0 -2px 6px rgba(28, 27, 24, 0.07);
+  --input-border: #ddd9d0;
+  --input-border-focus: #c7d3dd;
 }
 
 .app {
@@ -84,7 +86,7 @@ body {
 #search-entry {
   flex: 1;
   background-color: #ffffff;
-  border: none;
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   padding: 6px 10px;
   margin: 0;
@@ -92,7 +94,7 @@ body {
 }
 
 #search-entry:focus {
-  outline: 2px solid #c7d3dd;
+  outline: 2px solid var(--input-border-focus);
   outline-offset: -2px;
 }
 
@@ -316,7 +318,7 @@ textarea {
   font-family: inherit;
   font-size: 13px;
   background-color: #ffffff;
-  border: none;
+  border: 1px solid var(--input-border);
   border-radius: 6px;
   padding: 6px 10px;
   outline: none;
@@ -326,7 +328,7 @@ input[type="text"]:focus,
 input[type="number"]:focus,
 select:focus,
 textarea:focus {
-  outline: 2px solid #c7d3dd;
+  outline: 2px solid var(--input-border-focus);
   outline-offset: -2px;
 }
 
@@ -499,7 +501,7 @@ button.danger {
 #history-search-entry {
   flex: 1;
   background-color: #ffffff;
-  border: none;
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   padding: 6px 10px;
   margin: 0;
@@ -507,7 +509,7 @@ button.danger {
 }
 
 #history-search-entry:focus {
-  outline: 2px solid #c7d3dd;
+  outline: 2px solid var(--input-border-focus);
   outline-offset: -2px;
 }
 
