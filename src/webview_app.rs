@@ -1,0 +1,153 @@
+//! Tao/Wry application shell: owns the native window, webview, IPC backend,
+//! and tray handle, and drives the event loop.
+
+use std::path::PathBuf;
+
+use tao::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
+use tao::event::{Event, WindowEvent};
+use tao::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
+use tao::window::WindowBuilder;
+use wry::WebViewBuilder;
+
+use crate::ipc::{IpcBackend, RealDesktopEffects};
+use crate::tray::TrayState;
+
+/// User events delivered to the Tao event loop.
+#[derive(Debug, Clone)]
+pub enum AppEvent {
+    /// Toggle window visibility (hotkey / tray).
+    ToggleWindow,
+    /// Raw IPC JSON string from the webview.
+    Ipc(String),
+}
+
+/// The Promptly webview application: window + webview + backend + tray.
+pub struct PromptlyWebviewApp {
+    window: tao::window::Window,
+    webview: wry::WebView,
+    backend: IpcBackend,
+    _tray: TrayState,
+}
+
+impl PromptlyWebviewApp {
+    /// Build the (initially hidden) window and webview.
+    pub fn new(
+        event_loop: &EventLoop<AppEvent>,
+        proxy: EventLoopProxy<AppEvent>,
+        tray: TrayState,
+        db_path: PathBuf,
+    ) -> anyhow::Result<Self> {
+        // Build window. On Linux, prevent Tao's default GtkBox so Wry's
+        // build_gtk can add the WebKitWebView directly.
+        #[cfg(target_os = "linux")]
+        let window = {
+            use tao::platform::unix::WindowBuilderExtUnix;
+            WindowBuilder::new()
+                .with_title("Prompt Manager")
+                .with_inner_size(LogicalSize::new(500.0, 400.0))
+                .with_visible(false)
+                .with_decorations(true)
+                .with_always_on_top(true)
+                .with_default_vbox(false)
+                .build(event_loop)?
+        };
+        #[cfg(not(target_os = "linux"))]
+        let window = WindowBuilder::new()
+            .with_title("Prompt Manager")
+            .with_inner_size(LogicalSize::new(500.0, 400.0))
+            .with_visible(false)
+            .with_decorations(true)
+            .with_always_on_top(true)
+            .build(event_loop)?;
+
+        let proxy_for_ipc = proxy.clone();
+        let builder = WebViewBuilder::new()
+            .with_html(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/frontend/dist/index.html")))
+            .with_ipc_handler(move |request| {
+                let _ = proxy_for_ipc.send_event(AppEvent::Ipc(request.body().clone()));
+            })
+            .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:"))
+            .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny);
+
+        #[cfg(target_os = "linux")]
+        let webview = {
+            use tao::platform::unix::WindowExtUnix;
+            use wry::WebViewBuilderExtUnix;
+            builder.build_gtk(window.gtk_window())?
+        };
+        #[cfg(not(target_os = "linux"))]
+        let webview = builder.build(&window)?;
+
+        Ok(Self {
+            window,
+            webview,
+            backend: IpcBackend::new(db_path),
+            _tray: tray,
+        })
+    }
+
+    /// Run the event loop until the process exits.
+    pub fn run(event_loop: EventLoop<AppEvent>, state: PromptlyWebviewApp) -> ! {
+        event_loop.run(move |event, _target, control_flow| {
+            *control_flow = ControlFlow::Wait;
+            match event {
+                Event::UserEvent(AppEvent::ToggleWindow) => state.toggle_window(),
+                Event::UserEvent(AppEvent::Ipc(raw)) => state.handle_ipc(&raw),
+                Event::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    ..
+                } => state.window.set_visible(false),
+                _ => {}
+            }
+        });
+    }
+
+    fn toggle_window(&self) {
+        if self.window.is_visible() {
+            self.window.set_visible(false);
+        } else {
+            self.show_window();
+        }
+    }
+
+    fn show_window(&self) {
+        // Inner size 500x400 (logical), centered on the current/primary monitor.
+        self.window
+            .set_inner_size(LogicalSize::new(500.0, 400.0));
+
+        if let Some(monitor) = self
+            .window
+            .current_monitor()
+            .or_else(|| self.window.primary_monitor())
+        {
+            let scale = self.window.scale_factor();
+            let win_w = 500.0 * scale;
+            let win_h = 400.0 * scale;
+            let PhysicalPosition { x: mx, y: my } = monitor.position();
+            let PhysicalSize { width: mw, height: mh } = monitor.size();
+            let cx = mx + ((mw as f64 - win_w) / 2.0).round() as i32;
+            let cy = my + ((mh as f64 - win_h) / 2.0).round() as i32;
+            self.window
+                .set_outer_position(PhysicalPosition::new(cx, cy));
+        }
+
+        self.window.set_always_on_top(true);
+        self.window.set_visible(true);
+        self.window.set_focus();
+        let _ = self.webview.focus();
+        let _ = self
+            .webview
+            .evaluate_script("window.__promptlyOnShow && window.__promptlyOnShow();");
+    }
+
+    fn handle_ipc(&self, raw: &str) {
+        let handled = self.backend.handle(raw, &RealDesktopEffects);
+        let _ = self.webview.evaluate_script(&format!(
+            "window.__promptlyReceive({});",
+            handled.response_json
+        ));
+        if handled.hide_window {
+            self.window.set_visible(false);
+        }
+    }
+}

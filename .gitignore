@@ -1,8 +1,9 @@
 # Rust build artifacts
 /target/
 
-# Local linker shim created by the Makefile
-/lib/libxdo.so
+# Frontend build artifacts
+/frontend/node_modules/
+/frontend/dist/
 
 # Local environment and logs
 .env

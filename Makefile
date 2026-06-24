@@ -1,30 +1,24 @@
-.PHONY: all build run test clean install
+.PHONY: all frontend-deps frontend-build build run test clean install
 
 all: build
 
-libxdo:
-	mkdir -p lib
-	if [ ! -f lib/libxdo.so ]; then \
-		if [ -f /usr/lib/x86_64-linux-gnu/libxdo.so.3 ]; then \
-			ln -sf /usr/lib/x86_64-linux-gnu/libxdo.so.3 lib/libxdo.so; \
-		elif [ -f /usr/lib/libxdo.so.3 ]; then \
-			ln -sf /usr/lib/libxdo.so.3 lib/libxdo.so; \
-		else \
-			echo "Error: libxdo.so.3 not found on system." && exit 1; \
-		fi \
-	fi
+frontend-deps:
+	npm --prefix frontend ci
 
-build: libxdo
-	RUSTFLAGS="-L ./lib" cargo build --release
+frontend-build: frontend-deps
+	npm --prefix frontend run build
+
+build: frontend-build
+	cargo build --release
 
 run: build
 	./target/release/promptly
 
-test: libxdo
-	RUSTFLAGS="-L ./lib" cargo test
+test: frontend-build
+	cargo test
 
 clean:
-	rm -rf lib
+	rm -rf frontend/dist
 	cargo clean
 
 install: build
