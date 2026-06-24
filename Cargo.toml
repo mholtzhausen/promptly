@@ -26,7 +26,7 @@ fs2 = "0.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18.2"
-glib = "0.18.5"
+glib = "0.22.7"
 gdk = "0.18.2"
 gdkx11 = "0.18.2"
 
