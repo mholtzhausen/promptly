@@ -103,11 +103,14 @@ body {
   background-color: #8fa7b9;
 }
 
-/* ── Scrollable panes (reserve symmetric gutter for scrollbars) ───────── */
+/* ── Scrollable panes ────────────────────────────────────────────────── */
+/* Bleed into .app horizontal padding so the scrollbar sits on the window
+   edge. Do NOT pad the scrollport itself — WebKit paints the scrollbar
+   inside padding-inline-end, leaving a dead gap to the window edge. */
 #prompt-list,
 .editor-body,
 .variables-body {
-  scrollbar-gutter: stable both-edges;
+  margin-inline: calc(-1 * var(--pane-padding));
 }
 
 /* ── Prompt list ─────────────────────────────────────────────────────── */
@@ -122,7 +125,7 @@ body {
   align-items: center;
   padding: 7px 8px;
   border-radius: 8px;
-  margin: 2px 0;
+  margin: 2px var(--pane-padding);
   cursor: pointer;
 }
 
@@ -211,6 +214,7 @@ h1 {
   flex-direction: column;
   gap: 10px;
   min-height: 100%;
+  padding-inline: var(--pane-padding);
 }
 
 .editor-body .template-content-field {
@@ -357,7 +361,7 @@ button.danger {
 
 .variable-field,
 .preview-field {
-  margin: 0;
+  margin: 0 var(--pane-padding);
 }
 
 .var-name {

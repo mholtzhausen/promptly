@@ -245,11 +245,12 @@ export default function App() {
     setView("editor");
   }
 
-  function closeEditor() {
+  const closeEditor = useCallback(() => {
     setView("list");
     setEditingPrompt(null);
     setEditorError(null);
-  }
+    focusSearch();
+  }, [focusSearch]);
 
   async function handleSave() {
     const form = editorFormRef.current;
@@ -350,11 +351,27 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [variableValues]);
 
-  function cancelVariables() {
-    request("hideWindow");
+  const cancelVariables = useCallback(() => {
     setView("list");
     setVariablePrompt(null);
-  }
+    setVariables([]);
+    setVariableValues({});
+    setPreview("");
+    focusSearch();
+  }, [focusSearch]);
+
+  // Escape from editor or fill panes returns to the filter list (not hide window).
+  useEffect(() => {
+    if (view !== "editor" && view !== "variables") return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.preventDefault();
+      if (view === "editor") closeEditor();
+      else cancelVariables();
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [view, closeEditor, cancelVariables]);
 
   async function copyAndCloseVariables() {
     if (!variablePrompt) return;
@@ -372,10 +389,7 @@ export default function App() {
   if (view === "editor") {
     const p = editingPrompt;
     return (
-      <div
-        className="app editor-view"
-        onKeyDown={(e) => e.key === "Escape" && closeEditor()}
-      >
+      <div className="app editor-view">
         <h1 className="editor-header panel-header">
           {p ? "Edit Prompt Template" : "New Prompt Template"}
         </h1>
@@ -452,10 +466,7 @@ export default function App() {
 
   if (view === "variables" && variablePrompt) {
     return (
-      <div
-        className="app variables-view"
-        onKeyDown={(e) => e.key === "Escape" && cancelVariables()}
-      >
+      <div className="app variables-view">
         <h1 className="variables-header panel-header">
           Fill in variables for &lsquo;{variablePrompt.name}&rsquo;
         </h1>
