@@ -1,4 +1,42 @@
-//! Native window activation for the launcher popup (Linux/X11).
+//! Native window activation and positioning for the launcher popup (Linux/X11).
+
+use tao::dpi::PhysicalPosition;
+
+/// Set whole-window opacity (Linux/GTK). No-op on other platforms.
+#[cfg(target_os = "linux")]
+pub fn set_window_opacity(tao_window: &tao::window::Window, opacity: f64) {
+    use gtk::prelude::*;
+    use tao::platform::unix::WindowExtUnix;
+
+    tao_window.gtk_window().set_opacity(opacity);
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn set_window_opacity(_tao_window: &tao::window::Window, _opacity: f64) {}
+
+/// Synchronous X11 move before the window is mapped (no-op on Wayland/non-X11).
+#[cfg(target_os = "linux")]
+pub fn x11_move_window(tao_window: &tao::window::Window, pos: PhysicalPosition<i32>) {
+    use tao::platform::unix::WindowExtUnix;
+
+    let gtk_win = tao_window.gtk_window();
+    let Some(xid) = x11_window_id(&gtk_win) else {
+        return;
+    };
+
+    unsafe {
+        let display = x11::xlib::XOpenDisplay(std::ptr::null());
+        if display.is_null() {
+            return;
+        }
+        x11::xlib::XMoveWindow(display, xid, pos.x, pos.y);
+        x11::xlib::XFlush(display);
+        x11::xlib::XCloseDisplay(display);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn x11_move_window(_tao_window: &tao::window::Window, _pos: PhysicalPosition<i32>) {}
 
 #[cfg(target_os = "linux")]
 pub fn present_and_activate(tao_window: &tao::window::Window) {

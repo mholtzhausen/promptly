@@ -23,6 +23,8 @@ pub enum AppEvent {
     ToggleWindow,
     /// Raw IPC JSON string from the webview.
     Ipc(String),
+    /// Map the window after geometry has been applied while still hidden.
+    RevealWindow,
 }
 
 /// The Promptly webview application: window + webview + backend + tray.
@@ -31,6 +33,7 @@ pub struct PromptlyWebviewApp {
     webview: wry::WebView,
     backend: IpcBackend,
     _tray: TrayState,
+    event_proxy: EventLoopProxy<AppEvent>,
     /// True while waiting for the window to gain focus after show.
     focus_pending: Cell<bool>,
     /// True until the frontend on-show hook has run for this show cycle.
@@ -96,6 +99,7 @@ impl PromptlyWebviewApp {
             webview,
             backend: IpcBackend::new(db_path),
             _tray: tray,
+            event_proxy: proxy,
             focus_pending: Cell::new(false),
             on_show_pending: Cell::new(false),
             app_config: RefCell::new(app_config),
@@ -119,6 +123,7 @@ impl PromptlyWebviewApp {
             }
             match event {
                 Event::UserEvent(AppEvent::ToggleWindow) => state.toggle_window(),
+                Event::UserEvent(AppEvent::RevealWindow) => state.reveal_window(),
                 Event::UserEvent(AppEvent::Ipc(raw)) => state.handle_ipc(&raw),
                 Event::WindowEvent {
                     event: WindowEvent::Focused(true),
@@ -141,40 +146,71 @@ impl PromptlyWebviewApp {
 
     fn toggle_window(&self) {
         if self.window.is_visible() {
+            window_focus::set_window_opacity(&self.window, 1.0);
             self.window.set_visible(false);
         } else {
             self.show_window();
         }
     }
 
-    fn show_window(&self) {
+    fn centered_position(&self, window_size: crate::config::WindowSize) -> Option<PhysicalPosition<i32>> {
+        let monitor = self
+            .window
+            .current_monitor()
+            .or_else(|| self.window.primary_monitor())?;
+        let scale = self.window.scale_factor();
+        let win_w = window_size.width * scale;
+        let win_h = window_size.height * scale;
+        let PhysicalPosition { x: mx, y: my } = monitor.position();
+        let PhysicalSize { width: mw, height: mh } = monitor.size();
+        let cx = mx + ((mw as f64 - win_w) / 2.0).round() as i32;
+        let cy = my + ((mh as f64 - win_h) / 2.0).round() as i32;
+        Some(PhysicalPosition::new(cx, cy))
+    }
+
+    fn apply_centered_geometry(&self) {
         let window_size = self.app_config.borrow().window_size();
         self.window
             .set_inner_size(LogicalSize::new(window_size.width, window_size.height));
-
-        if let Some(monitor) = self
-            .window
-            .current_monitor()
-            .or_else(|| self.window.primary_monitor())
-        {
-            let scale = self.window.scale_factor();
-            let win_w = window_size.width * scale;
-            let win_h = window_size.height * scale;
-            let PhysicalPosition { x: mx, y: my } = monitor.position();
-            let PhysicalSize { width: mw, height: mh } = monitor.size();
-            let cx = mx + ((mw as f64 - win_w) / 2.0).round() as i32;
-            let cy = my + ((mh as f64 - win_h) / 2.0).round() as i32;
-            self.window
-                .set_outer_position(PhysicalPosition::new(cx, cy));
+        if let Some(pos) = self.centered_position(window_size) {
+            self.window.set_outer_position(pos);
+            window_focus::x11_move_window(&self.window, pos);
         }
+    }
 
+    /// Position the hidden window, then defer mapping to the next event-loop tick.
+    fn show_window(&self) {
+        self.apply_centered_geometry();
         self.focus_pending.set(true);
         self.on_show_pending.set(true);
         self.window.set_always_on_top(true);
+        window_focus::set_window_opacity(&self.window, 0.0);
+        let _ = self.event_proxy.send_event(AppEvent::RevealWindow);
+    }
+
+    /// Map and activate the window after geometry has settled while still hidden.
+    fn reveal_window(&self) {
+        self.apply_centered_geometry();
         self.window.set_visible(true);
         window_focus::present_and_activate(&self.window);
         self.focus_webview();
+        self.schedule_reveal_opacity();
         self.finalize_show();
+    }
+
+    fn schedule_reveal_opacity(&self) {
+        #[cfg(target_os = "linux")]
+        {
+            use gtk::prelude::*;
+            use tao::platform::unix::WindowExtUnix;
+
+            let gtk_win = self.window.gtk_window().clone();
+            glib::idle_add_local_once(move || gtk_win.set_opacity(1.0));
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            window_focus::set_window_opacity(&self.window, 1.0);
+        }
     }
 
     fn on_window_resized(&self) {
