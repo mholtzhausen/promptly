@@ -8,6 +8,12 @@ import type {
   DeletePromptPayload,
   InterpolatePayload,
   CopyPromptPayload,
+  VariableValue,
+  HistoryListItem,
+  HistoryListResult,
+  HistoryEntry,
+  HistoryIdPayload,
+  PruneHistoryPayload,
 } from "./types";
 import "./styles.css";
 
@@ -46,7 +52,42 @@ function filterPrompts(prompts: Prompt[], query: string): Prompt[] {
   return [...nameMatches, ...descMatches, ...contentMatches];
 }
 
-type View = "list" | "editor" | "delete" | "variables";
+function filterHistory(entries: HistoryListItem[], query: string): HistoryListItem[] {
+  const q = query.trim();
+  if (!q) return entries;
+  return entries.filter((e) => fuzzyMatch(e.title, q));
+}
+
+/** Parse stored title `[Name](var1:val1, …)` for display. */
+function parseHistoryTitle(title: string): { name: string; vars: string | null } {
+  const match = /^\[([^\]]*)\]\((.*)\)$/.exec(title);
+  if (!match) return { name: title, vars: null };
+  const name = match[1];
+  const vars = match[2];
+  return { name, vars: vars ? vars : null };
+}
+
+function HistoryTitleText({ title }: { title: string }) {
+  const { name, vars } = parseHistoryTitle(title);
+  return (
+    <span className="history-title">
+      <span className="history-title-name">{name}</span>
+      {vars !== null && (
+        <span className="history-title-vars"> ({vars})</span>
+      )}
+    </span>
+  );
+}
+
+const PRUNE_KEEP_OPTIONS = [10, 100, 500, 1000] as const;
+
+type View =
+  | "list"
+  | "editor"
+  | "delete"
+  | "variables"
+  | "history"
+  | "historyDetail";
 
 export default function App() {
   const [view, setView] = useState<View>("list");
@@ -66,13 +107,33 @@ export default function App() {
   const [variableValues, setVariableValues] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState("");
 
+  // History state
+  const [historyEntries, setHistoryEntries] = useState<HistoryListItem[]>([]);
+  const [historyTotalCount, setHistoryTotalCount] = useState(0);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historySelectedIndex, setHistorySelectedIndex] = useState(0);
+  const [historyDetail, setHistoryDetail] = useState<HistoryEntry | null>(null);
+  const [pruneMenuOpen, setPruneMenuOpen] = useState(false);
+
   const searchRef = useRef<HTMLInputElement>(null);
+  const historySearchRef = useRef<HTMLInputElement>(null);
+  const pruneMenuRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const historyListRef = useRef<HTMLDivElement>(null);
   const editorFormRef = useRef<HTMLFormElement>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
 
   const focusSearch = useCallback(() => {
     const attempt = () => searchRef.current?.focus({ preventScroll: true });
+    attempt();
+    requestAnimationFrame(attempt);
+    window.setTimeout(attempt, 0);
+    window.setTimeout(attempt, 50);
+  }, []);
+
+  const focusHistorySearch = useCallback(() => {
+    const attempt = () =>
+      historySearchRef.current?.focus({ preventScroll: true });
     attempt();
     requestAnimationFrame(attempt);
     window.setTimeout(attempt, 0);
@@ -141,8 +202,48 @@ export default function App() {
     return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [view]);
 
+  // Route printable keys to the history filter when focus is elsewhere.
+  useEffect(() => {
+    if (view !== "history") return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target === historySearchRef.current) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.length !== 1) return;
+      e.preventDefault();
+      historySearchRef.current?.focus();
+      setHistoryQuery((prev) => prev + e.key);
+      setHistorySelectedIndex(0);
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, [view]);
+
+  // Keep the history filter focused whenever the history view is active.
+  useEffect(() => {
+    if (view !== "history") return;
+    focusHistorySearch();
+    window.addEventListener("focus", focusHistorySearch);
+    return () => window.removeEventListener("focus", focusHistorySearch);
+  }, [view, focusHistorySearch]);
+
+  // Close the prune menu when clicking outside.
+  useEffect(() => {
+    if (!pruneMenuOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (
+        pruneMenuRef.current &&
+        !pruneMenuRef.current.contains(e.target as Node)
+      ) {
+        setPruneMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [pruneMenuOpen]);
+
   // ── Filtered list ──────────────────────────────────────────────────
   const filtered = filterPrompts(prompts, query);
+  const filteredHistory = filterHistory(historyEntries, historyQuery);
 
   // Ensure selectedIndex stays in bounds when the filter changes.
   useEffect(() => {
@@ -161,6 +262,31 @@ export default function App() {
       | undefined;
     row?.scrollIntoView({ block: "nearest" });
   }, [selectedIndex, filtered, view]);
+
+  // Ensure historySelectedIndex stays in bounds when the filter changes.
+  useEffect(() => {
+    if (filteredHistory.length === 0) {
+      setHistorySelectedIndex(0);
+    } else if (historySelectedIndex >= filteredHistory.length) {
+      setHistorySelectedIndex(filteredHistory.length - 1);
+    }
+  }, [filteredHistory.length, historySelectedIndex]);
+
+  // Scroll the highlighted history row into view.
+  useEffect(() => {
+    if (view !== "history" || !historyListRef.current) return;
+    const row = historyListRef.current.children[historySelectedIndex] as
+      | HTMLElement
+      | undefined;
+    row?.scrollIntoView({ block: "nearest" });
+  }, [historySelectedIndex, filteredHistory, view]);
+
+  const buildCopyValues = useCallback((): VariableValue[] => {
+    return variables.map((v) => ({
+      name: v.name,
+      value: variableValues[v.name] ?? "",
+    }));
+  }, [variables, variableValues]);
 
   // ── Prompt selection (copy or show variables) ──────────────────────
   const selectPrompt = useCallback(async (prompt: Prompt) => {
@@ -225,14 +351,128 @@ export default function App() {
     [view, filtered, selectedIndex, selectPrompt],
   );
 
+  // ── History ───────────────────────────────────────────────────────
+  const loadHistory = useCallback(async () => {
+    try {
+      const result = await request<HistoryListResult>("listHistory");
+      setHistoryEntries(result.entries);
+      setHistoryTotalCount(result.totalCount);
+    } catch {
+      // silently ignore
+    }
+  }, []);
+
+  const openHistory = useCallback(async () => {
+    await loadHistory();
+    setHistoryQuery("");
+    setHistorySelectedIndex(0);
+    setView("history");
+  }, [loadHistory]);
+
+  const closeHistory = useCallback(() => {
+    setView("list");
+    setHistoryQuery("");
+    setHistorySelectedIndex(0);
+    focusSearch();
+  }, [focusSearch]);
+
+  const openHistoryDetail = useCallback(async (item: HistoryListItem) => {
+    try {
+      const entry = await request<HistoryEntry | null>("getHistoryEntry", {
+        id: item.id,
+      } as HistoryIdPayload);
+      if (!entry) return;
+      setHistoryDetail(entry);
+      setView("historyDetail");
+    } catch {
+      // silently ignore
+    }
+  }, []);
+
+  const closeHistoryDetail = useCallback(() => {
+    setHistoryDetail(null);
+    setView("history");
+    focusHistorySearch();
+  }, [focusHistorySearch]);
+
+  const deleteHistoryItem = useCallback(
+    async (id: number, e?: React.MouseEvent) => {
+      e?.stopPropagation();
+      try {
+        await request("deleteHistoryEntry", { id } as HistoryIdPayload);
+        await loadHistory();
+      } catch {
+        // silent
+      }
+    },
+    [loadHistory],
+  );
+
+  const pruneHistoryKeep = useCallback(
+    async (keep: number) => {
+      setPruneMenuOpen(false);
+      try {
+        await request("pruneHistory", { keep } as PruneHistoryPayload);
+        await loadHistory();
+        setHistorySelectedIndex(0);
+      } catch {
+        // silent
+      }
+    },
+    [loadHistory],
+  );
+
+  const handleHistoryKey = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (view !== "history") return;
+
+      switch (e.key) {
+        case "Escape":
+          e.preventDefault();
+          closeHistory();
+          break;
+        case "ArrowDown": {
+          e.preventDefault();
+          const max = filteredHistory.length;
+          if (max > 0) setHistorySelectedIndex((prev) => (prev + 1) % max);
+          break;
+        }
+        case "ArrowUp": {
+          e.preventDefault();
+          const max = filteredHistory.length;
+          if (max > 0)
+            setHistorySelectedIndex((prev) => (prev + max - 1) % max);
+          break;
+        }
+        case "Enter": {
+          e.preventDefault();
+          const entry = filteredHistory[historySelectedIndex];
+          if (entry) openHistoryDetail(entry);
+          break;
+        }
+      }
+    },
+    [
+      view,
+      filteredHistory,
+      historySelectedIndex,
+      closeHistory,
+      openHistoryDetail,
+    ],
+  );
+
   async function copyPrompt(
     text: string,
     promptName: string,
     messageKind: "noVariables" | "variables",
+    promptId: number | null,
+    values: VariableValue[],
   ) {
     await request("copyPrompt", {
       text,
       promptName,
+      promptId,
+      values,
       messageKind,
     } as CopyPromptPayload);
   }
@@ -372,6 +612,8 @@ export default function App() {
         preview,
         variablePrompt.name,
         variables.length === 0 ? "noVariables" : "variables",
+        variablePrompt.id,
+        buildCopyValues(),
       );
       setView("list");
       setVariablePrompt(null);
@@ -382,20 +624,35 @@ export default function App() {
     } catch {
       // silent
     }
-  }, [variablePrompt, preview, variables, focusSearch]);
+  }, [variablePrompt, preview, variables, buildCopyValues, focusSearch]);
 
-  // Escape from editor or fill panes returns to the filter list (not hide window).
+  // Escape from editor, fill, or history panes.
   useEffect(() => {
-    if (view !== "editor" && view !== "variables") return;
+    if (
+      view !== "editor" &&
+      view !== "variables" &&
+      view !== "history" &&
+      view !== "historyDetail"
+    ) {
+      return;
+    }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || e.ctrlKey) return;
       e.preventDefault();
       if (view === "editor") closeEditor();
-      else copyAndBackToList();
+      else if (view === "variables") copyAndBackToList();
+      else if (view === "history") closeHistory();
+      else closeHistoryDetail();
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [view, closeEditor, copyAndBackToList]);
+  }, [
+    view,
+    closeEditor,
+    copyAndBackToList,
+    closeHistory,
+    closeHistoryDetail,
+  ]);
 
   async function copyVariables() {
     if (!variablePrompt) return;
@@ -404,6 +661,8 @@ export default function App() {
         preview,
         variablePrompt.name,
         variables.length === 0 ? "noVariables" : "variables",
+        variablePrompt.id,
+        buildCopyValues(),
       );
     } catch {
       // silent
@@ -417,6 +676,8 @@ export default function App() {
         preview,
         variablePrompt.name,
         variables.length === 0 ? "noVariables" : "variables",
+        variablePrompt.id,
+        buildCopyValues(),
       );
       setView("list");
       setVariablePrompt(null);
@@ -424,6 +685,21 @@ export default function App() {
       setVariableValues({});
       setPreview("");
       await request("hideWindow");
+    } catch {
+      // silent
+    }
+  }
+
+  async function copyHistoryDetail() {
+    if (!historyDetail) return;
+    try {
+      await copyPrompt(
+        historyDetail.content,
+        historyDetail.promptName,
+        historyDetail.variables.length === 0 ? "noVariables" : "variables",
+        historyDetail.promptId,
+        historyDetail.variables,
+      );
     } catch {
       // silent
     }
@@ -589,6 +865,159 @@ export default function App() {
     );
   }
 
+  if (view === "historyDetail" && historyDetail) {
+    return (
+      <div className="app history-detail-view">
+        <h1 className="history-detail-header panel-header">
+          <HistoryTitleText title={historyDetail.title} />
+        </h1>
+        <div className="history-detail-body">
+          {historyDetail.variables.length > 0 && (
+            <div className="history-variables">
+              <h2 className="history-section-title">Variables used</h2>
+              {historyDetail.variables.map((v) => (
+                <label key={v.name} className="history-variable-row">
+                  <span className="var-name">{v.name}</span>
+                  <textarea
+                    className="mono multiline"
+                    readOnly
+                    value={v.value}
+                  />
+                </label>
+              ))}
+            </div>
+          )}
+          <label className="preview-field history-content-field">
+            Resulting prompt
+            <textarea
+              className="mono multiline preview"
+              readOnly
+              value={historyDetail.content}
+            />
+          </label>
+        </div>
+        <div className="history-detail-footer panel-footer">
+          <div className="buttons">
+            <button type="button" onClick={closeHistoryDetail}>
+              Close
+            </button>
+            <button
+              type="button"
+              className="primary"
+              onClick={copyHistoryDetail}
+            >
+              Copy
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === "history") {
+    const showPruneWarning = historyTotalCount >= 1000;
+    return (
+      <div className="app history-view" onKeyDown={handleHistoryKey}>
+        <div id="history-top-bar" className="panel-header">
+          <input
+            id="history-search-entry"
+            ref={historySearchRef}
+            type="search"
+            placeholder="Filter history..."
+            value={historyQuery}
+            onChange={(e) => {
+              setHistoryQuery(e.target.value);
+              setHistorySelectedIndex(0);
+            }}
+            onInput={(e) => {
+              setHistoryQuery(e.currentTarget.value);
+              setHistorySelectedIndex(0);
+            }}
+            onBlur={(e) => {
+              const next = e.relatedTarget as HTMLElement | null;
+              if (
+                next?.closest(".action-btn") ||
+                next?.closest(".history-prune-wrap")
+              ) {
+                return;
+              }
+              focusHistorySearch();
+            }}
+          />
+        </div>
+        <div id="history-list" ref={historyListRef}>
+          {filteredHistory.map((entry, i) => (
+            <div
+              key={entry.id}
+              className={
+                "history-row" + (i === historySelectedIndex ? " selected" : "")
+              }
+              onClick={() => {
+                setHistorySelectedIndex(i);
+                focusHistorySearch();
+                openHistoryDetail(entry);
+              }}
+            >
+              <HistoryTitleText title={entry.title} />
+              <div className="prompt-actions">
+                <button
+                  className="action-btn"
+                  title="Delete history entry"
+                  onClick={(e) => deleteHistoryItem(entry.id, e)}
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div id="history-status-label" className="panel-footer history-footer">
+          {showPruneWarning && (
+            <p className="history-warning">
+              1000+ entries — consider pruning.
+            </p>
+          )}
+          <div className="history-footer-row">
+            <span className="history-status-text">
+              {historyTotalCount === 0
+                ? "No history yet. Copy a prompt to record it."
+                : historyQuery && filteredHistory.length === 0
+                  ? `No matches for "${historyQuery}"`
+                  : `${filteredHistory.length} entr${filteredHistory.length !== 1 ? "ies" : "y"} shown`}
+            </span>
+            {historyTotalCount > 0 && (
+              <div className="history-prune-wrap" ref={pruneMenuRef}>
+                {pruneMenuOpen && (
+                  <div className="history-prune-menu" role="menu">
+                    {PRUNE_KEEP_OPTIONS.map((keep) => (
+                      <button
+                        key={keep}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => pruneHistoryKeep(keep)}
+                      >
+                        Keep last {keep}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button
+                  id="history-prune-button"
+                  type="button"
+                  aria-expanded={pruneMenuOpen}
+                  aria-haspopup="menu"
+                  onClick={() => setPruneMenuOpen((open) => !open)}
+                >
+                  Prune
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Default: list view
   return (
     <div className="app list-view" onKeyDown={handleListKey}>
@@ -609,12 +1038,23 @@ export default function App() {
           }}
           onBlur={(e) => {
             const next = e.relatedTarget as HTMLElement | null;
-            if (next?.closest("#add-button") || next?.closest(".action-btn")) {
+            if (
+              next?.closest("#add-button") ||
+              next?.closest("#history-button") ||
+              next?.closest(".action-btn")
+            ) {
               return;
             }
             focusSearch();
           }}
         />
+        <button
+          id="history-button"
+          title="Copy history"
+          onClick={openHistory}
+        >
+          ⟳
+        </button>
         <button id="add-button" title="Add prompt" onClick={openNew}>
           +
         </button>

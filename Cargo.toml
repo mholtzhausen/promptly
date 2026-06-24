@@ -17,6 +17,7 @@ anyhow = "1"
 env_logger = "0.11"
 log = "0.4"
 regex = "1"
+sha2 = "0.10"
 ksni = { version = "0.3", features = ["blocking"] }
 notify-rust = "4"
 dirs-next = "2"

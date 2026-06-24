@@ -34,13 +34,17 @@ body {
 /* Fixed header + footer; only the middle section scrolls */
 .app.list-view,
 .app.editor-view,
-.app.variables-view {
+.app.variables-view,
+.app.history-view,
+.app.history-detail-view {
   height: 100%;
   min-height: 0;
   overflow: hidden;
 }
 
-.app:not(.list-view):not(.editor-view):not(.variables-view) {
+.app:not(.list-view):not(.editor-view):not(.variables-view):not(.history-view):not(
+    .history-detail-view
+  ) {
   height: 100%;
   overflow-y: auto;
 }
@@ -87,7 +91,8 @@ body {
   outline-offset: -2px;
 }
 
-#add-button {
+#add-button,
+#history-button {
   background-color: #a3b9c9;
   color: #1a1a1a;
   border: none;
@@ -99,7 +104,8 @@ body {
   cursor: pointer;
 }
 
-#add-button:hover {
+#add-button:hover,
+#history-button:hover {
   background-color: #8fa7b9;
 }
 
@@ -109,12 +115,20 @@ body {
    inside padding-inline-end, leaving a dead gap to the window edge. */
 #prompt-list,
 .editor-body,
-.variables-body {
+.variables-body,
+#history-list,
+.history-detail-body {
   margin-inline: calc(-1 * var(--pane-padding));
 }
 
 /* ── Prompt list ─────────────────────────────────────────────────────── */
 #prompt-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+#history-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -135,6 +149,47 @@ body {
 
 .prompt-row.selected {
   background-color: #e8e4da;
+}
+
+.history-row {
+  display: flex;
+  align-items: center;
+  padding: 7px 8px;
+  border-radius: 8px;
+  margin: 2px var(--pane-padding);
+  cursor: pointer;
+}
+
+.history-row:hover {
+  background-color: #f0ede5;
+}
+
+.history-row.selected {
+  background-color: #e8e4da;
+}
+
+.history-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  overflow: hidden;
+}
+
+.history-title-name {
+  color: #1c1b18;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.history-title-vars {
+  color: #777167;
+  font-weight: 400;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .prompt-text {
@@ -199,7 +254,8 @@ h1 {
 }
 
 .editor-header,
-.variables-header {
+.variables-header,
+.history-detail-header {
   margin: 0;
 }
 
@@ -351,12 +407,149 @@ button.danger {
   gap: 10px;
 }
 
+.variables-body .preview-field {
+  flex: 1;
+  min-height: 0;
+}
+
+.variables-body .preview-field textarea {
+  flex: 1;
+  min-height: 120px;
+  resize: none;
+}
+
 .variables-footer .buttons {
   margin-top: 8px;
 }
 
 .variables-footer.panel-footer .buttons {
   margin-top: 0;
+}
+
+.history-detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.history-detail-footer .buttons {
+  margin-top: 0;
+}
+
+.history-section-title {
+  font-size: 13px;
+  margin: 0 var(--pane-padding) 4px;
+  color: #1c1b18;
+}
+
+.history-variables {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-variable-row {
+  margin: 0 var(--pane-padding);
+}
+
+.history-content-field {
+  flex: 1;
+  min-height: 0;
+}
+
+.history-content-field textarea {
+  min-height: 120px;
+  resize: none;
+}
+
+#history-top-bar {
+  display: flex;
+  gap: 6px;
+}
+
+#history-search-entry {
+  flex: 1;
+  background-color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin: 0;
+  outline: none;
+}
+
+#history-search-entry:focus {
+  outline: 2px solid #c7d3dd;
+  outline-offset: -2px;
+}
+
+.history-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-warning {
+  color: #a06040;
+  font-size: 11px;
+  margin: 0;
+}
+
+.history-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.history-status-text {
+  color: #b0afa7;
+  font-size: 11px;
+}
+
+.history-prune-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.history-prune-menu {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 4px;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 -2px 10px rgba(28, 27, 24, 0.12);
+  display: flex;
+  flex-direction: column;
+  min-width: 148px;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.history-prune-menu button {
+  text-align: left;
+  padding: 8px 12px;
+  background: transparent;
+  border-radius: 0;
+}
+
+.history-prune-menu button:hover {
+  background-color: #f0ede5;
+}
+
+#history-prune-button {
+  padding: 4px 10px;
+  font-size: 12px;
+  background-color: #d8dde3;
+  color: #1a1a1a;
+  border-radius: 8px;
+}
+
+#history-prune-button:hover {
+  background-color: #c7ced6;
 }
 
 .variable-field,

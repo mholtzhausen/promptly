@@ -44,7 +44,44 @@ export type CopyMessageKind = "noVariables" | "variables";
 export interface CopyPromptPayload {
   text: string;
   promptName: string;
+  promptId: number | null;
+  values: VariableValue[];
   messageKind: CopyMessageKind;
+}
+
+export interface CopyPromptResult {
+  copied: boolean;
+  historyInserted: boolean;
+  historyCount: number;
+}
+
+export interface HistoryListItem {
+  id: number;
+  title: string;
+  createdAt: number;
+}
+
+export interface HistoryListResult {
+  entries: HistoryListItem[];
+  totalCount: number;
+}
+
+export interface HistoryEntry {
+  id: number;
+  title: string;
+  content: string;
+  variables: VariableValue[];
+  promptId: number | null;
+  promptName: string;
+  createdAt: number;
+}
+
+export interface HistoryIdPayload {
+  id: number;
+}
+
+export interface PruneHistoryPayload {
+  keep: number;
 }
 
 export interface SavePromptResult {

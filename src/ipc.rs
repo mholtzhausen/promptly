@@ -25,6 +25,10 @@ pub enum IpcCommand {
     VariablesForTemplate(TemplatePayload),
     Interpolate(InterpolatePayload),
     CopyPrompt(CopyPromptPayload),
+    ListHistory,
+    GetHistoryEntry(HistoryIdPayload),
+    DeleteHistoryEntry(HistoryIdPayload),
+    PruneHistory(PruneHistoryPayload),
     HideWindow,
     Quit,
 }
@@ -68,7 +72,21 @@ pub struct VariableValue {
 pub struct CopyPromptPayload {
     pub text: String,
     pub prompt_name: String,
+    pub prompt_id: Option<i64>,
+    pub values: Vec<VariableValue>,
     pub message_kind: CopyMessageKind,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryIdPayload {
+    pub id: i64,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PruneHistoryPayload {
+    pub keep: i64,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -94,6 +112,14 @@ pub struct IpcEnvelope<T: serde::Serialize> {
 pub struct SavePromptResult {
     pub saved: bool,
     pub prompt: Option<crate::db::Prompt>,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyPromptResult {
+    pub copied: bool,
+    pub history_inserted: bool,
+    pub history_count: i64,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -190,6 +216,10 @@ impl IpcBackend {
             IpcCommand::VariablesForTemplate(p) => self.cmd_variables(id, p),
             IpcCommand::Interpolate(p) => self.cmd_interpolate(id, p),
             IpcCommand::CopyPrompt(p) => self.cmd_copy_prompt(id, p, effects),
+            IpcCommand::ListHistory => self.cmd_list_history(id),
+            IpcCommand::GetHistoryEntry(p) => self.cmd_get_history_entry(id, p),
+            IpcCommand::DeleteHistoryEntry(p) => self.cmd_delete_history_entry(id, p),
+            IpcCommand::PruneHistory(p) => self.cmd_prune_history(id, p),
             IpcCommand::HideWindow => {
                 let resp = IpcEnvelope {
                     id: id.to_string(),
@@ -409,10 +439,42 @@ impl IpcBackend {
                     }
                 };
                 effects.notify("Prompt copied", &body);
+
+                let history_values: Vec<db::HistoryVariable> = p
+                    .values
+                    .iter()
+                    .map(|v| db::HistoryVariable {
+                        name: v.name.clone(),
+                        value: v.value.clone(),
+                    })
+                    .collect();
+
+                let history_result = self.with_db(|conn| {
+                    db::insert_history_if_new(
+                        conn,
+                        &p.text,
+                        p.prompt_id,
+                        &p.prompt_name,
+                        &history_values,
+                    )
+                });
+
+                let (history_inserted, history_count) = match history_result {
+                    Ok(result) => result,
+                    Err(e) => {
+                        log::error!("copyPrompt history insert failed: {}", e);
+                        (false, 0)
+                    }
+                };
+
                 let resp = IpcEnvelope {
                     id: id.to_string(),
                     ok: true,
-                    data: Some(true),
+                    data: Some(CopyPromptResult {
+                        copied: true,
+                        history_inserted,
+                        history_count,
+                    }),
                     error: None,
                 };
                 (serde_json::to_string(&resp).unwrap(), false, false)
@@ -423,6 +485,102 @@ impl IpcBackend {
                     "Prompt not copied",
                     "Could not access the system clipboard.",
                 );
+                let resp = IpcEnvelope::<CopyPromptResult> {
+                    id: id.to_string(),
+                    ok: false,
+                    data: None,
+                    error: Some(e.to_string()),
+                };
+                (serde_json::to_string(&resp).unwrap(), false, false)
+            }
+        }
+    }
+
+    fn cmd_list_history(&self, id: &str) -> (String, bool, bool) {
+        match self.with_db(|conn| db::list_history(conn)) {
+            Ok(result) => {
+                let resp = IpcEnvelope {
+                    id: id.to_string(),
+                    ok: true,
+                    data: Some(result),
+                    error: None,
+                };
+                (serde_json::to_string(&resp).unwrap(), false, false)
+            }
+            Err(e) => {
+                log::error!("listHistory failed: {}", e);
+                let resp = IpcEnvelope::<db::HistoryListResult> {
+                    id: id.to_string(),
+                    ok: false,
+                    data: None,
+                    error: Some(e.to_string()),
+                };
+                (serde_json::to_string(&resp).unwrap(), false, false)
+            }
+        }
+    }
+
+    fn cmd_get_history_entry(&self, id: &str, p: HistoryIdPayload) -> (String, bool, bool) {
+        match self.with_db(|conn| db::get_history_entry(conn, p.id)) {
+            Ok(entry) => {
+                let resp = IpcEnvelope {
+                    id: id.to_string(),
+                    ok: true,
+                    data: Some(entry),
+                    error: None,
+                };
+                (serde_json::to_string(&resp).unwrap(), false, false)
+            }
+            Err(e) => {
+                log::error!("getHistoryEntry failed: {}", e);
+                let resp = IpcEnvelope::<db::HistoryEntry> {
+                    id: id.to_string(),
+                    ok: false,
+                    data: None,
+                    error: Some(e.to_string()),
+                };
+                (serde_json::to_string(&resp).unwrap(), false, false)
+            }
+        }
+    }
+
+    fn cmd_delete_history_entry(&self, id: &str, p: HistoryIdPayload) -> (String, bool, bool) {
+        match self.with_db(|conn| db::delete_history_entry(conn, p.id)) {
+            Ok(()) => {
+                let resp = IpcEnvelope {
+                    id: id.to_string(),
+                    ok: true,
+                    data: Some(true),
+                    error: None,
+                };
+                (serde_json::to_string(&resp).unwrap(), false, false)
+            }
+            Err(e) => {
+                log::error!("deleteHistoryEntry failed: {}", e);
+                let resp = IpcEnvelope::<bool> {
+                    id: id.to_string(),
+                    ok: false,
+                    data: None,
+                    error: Some(e.to_string()),
+                };
+                (serde_json::to_string(&resp).unwrap(), false, false)
+            }
+        }
+    }
+
+    fn cmd_prune_history(&self, id: &str, p: PruneHistoryPayload) -> (String, bool, bool) {
+        match self.with_db(|conn| db::prune_history_keep_last(conn, p.keep)) {
+            Ok(()) => {
+                let resp = IpcEnvelope {
+                    id: id.to_string(),
+                    ok: true,
+                    data: Some(true),
+                    error: None,
+                };
+                (serde_json::to_string(&resp).unwrap(), false, false)
+            }
+            Err(e) => {
+                log::error!("pruneHistory failed: {}", e);
                 let resp = IpcEnvelope::<bool> {
                     id: id.to_string(),
                     ok: false,
@@ -590,16 +748,21 @@ mod tests {
             "payload": {
                 "text": "Hello",
                 "promptName": "plain-copy",
+                "promptId": null,
+                "values": [],
                 "messageKind": "noVariables"
             }
         })
         .to_string();
-        handle(&backend, &effects, &raw);
+        let resp = handle(&backend, &effects, &raw);
         assert_eq!(effects.copied.borrow()[0], "Hello");
         assert_eq!(
             effects.notifications.borrow()[0],
             ("Prompt copied".to_string(), "'plain-copy' copied to clipboard".to_string())
         );
+        assert_eq!(resp["data"]["copied"], true);
+        assert_eq!(resp["data"]["historyInserted"], true);
+        assert_eq!(resp["data"]["historyCount"], 1);
 
         let raw = serde_json::json!({
             "id": "6",
@@ -607,6 +770,8 @@ mod tests {
             "payload": {
                 "text": "Hi",
                 "promptName": "with-vars",
+                "promptId": 42,
+                "values": [{ "name": "x", "value": "y" }],
                 "messageKind": "variables"
             }
         })
@@ -616,6 +781,98 @@ mod tests {
             effects.notifications.borrow()[1],
             ("Prompt copied".to_string(), "'with-vars' copied to clipboard!".to_string())
         );
+
+        // Duplicate content hash should not insert a second history row.
+        let raw = serde_json::json!({
+            "id": "6b",
+            "command": "copyPrompt",
+            "payload": {
+                "text": "Hello",
+                "promptName": "plain-copy",
+                "promptId": null,
+                "values": [],
+                "messageKind": "noVariables"
+            }
+        })
+        .to_string();
+        let dup_resp = handle(&backend, &effects, &raw);
+        assert_eq!(dup_resp["data"]["historyInserted"], false);
+        assert_eq!(dup_resp["data"]["historyCount"], 2);
+    }
+
+    #[test]
+    fn history_list_get_delete_and_prune() {
+        let (backend, _f) = backend();
+        let mut effects = FakeEffects::default();
+        effects.copy_ok = true;
+
+        let copy_raw = serde_json::json!({
+            "id": "h1",
+            "command": "copyPrompt",
+            "payload": {
+                "text": "Saved prompt",
+                "promptName": "tpl",
+                "promptId": 1,
+                "values": [{ "name": "topic", "value": "rust" }],
+                "messageKind": "variables"
+            }
+        })
+        .to_string();
+        handle(&backend, &effects, &copy_raw);
+
+        let list_resp = handle(
+            &backend,
+            &effects,
+            r#"{"id":"h2","command":"listHistory"}"#,
+        );
+        assert_eq!(list_resp["ok"], true);
+        assert_eq!(list_resp["data"]["totalCount"], 1);
+        let entry_id = list_resp["data"]["entries"][0]["id"].as_i64().unwrap();
+
+        let get_resp = handle(
+            &backend,
+            &effects,
+            &serde_json::json!({
+                "id": "h3",
+                "command": "getHistoryEntry",
+                "payload": { "id": entry_id }
+            })
+            .to_string(),
+        );
+        assert_eq!(get_resp["data"]["content"], "Saved prompt");
+        assert_eq!(get_resp["data"]["variables"][0]["name"], "topic");
+
+        let del_resp = handle(
+            &backend,
+            &effects,
+            &serde_json::json!({
+                "id": "h4",
+                "command": "deleteHistoryEntry",
+                "payload": { "id": entry_id }
+            })
+            .to_string(),
+        );
+        assert_eq!(del_resp["data"], true);
+
+        handle(&backend, &effects, &copy_raw);
+        let prune_resp = handle(
+            &backend,
+            &effects,
+            &serde_json::json!({
+                "id": "h5",
+                "command": "pruneHistory",
+                "payload": { "keep": 0 }
+            })
+            .to_string(),
+        );
+        assert_eq!(prune_resp["data"], true);
+
+        let list_after = handle(
+            &backend,
+            &effects,
+            r#"{"id":"h6","command":"listHistory"}"#,
+        );
+        assert_eq!(list_after["data"]["totalCount"], 0);
     }
 
     #[test]
