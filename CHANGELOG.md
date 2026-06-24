@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-25
+
 ### Added
 
 - GitHub Actions CI (fmt, clippy, tests, cargo/npm audit)
@@ -19,12 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Frontend Vitest unit tests
 - Accessibility improvements (ARIA labels, live regions)
 - LICENSE (MIT), SECURITY.md, CONTRIBUTING.md, troubleshooting docs
+- History management with search, edit, and prune
+- Dynamic window title updates and window reveal/geometry handling
+- Keyboard shortcuts (Escape to close, Ctrl+Escape to quit, Ctrl/Meta prompt selection)
+- YAML configuration support for window preferences
 
 ### Changed
 
 - Restructured IPC into `src/ipc/` modules
 - Decomposed React frontend into components, hooks, and typed API client
 - `make run` uses foreground mode for easier local debugging
+- Refactored CSS to use variables for improved maintainability
+- Enhanced build and installation processes with improved error handling
+- Dependency updates (GTK/glib, rusqlite, notify-rust, CI actions)
 
 ## [0.1.0] - 2026-06-24
 
@@ -34,5 +43,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fuzzy search, variable interpolation, copy history
 - Global hotkey (Ctrl+Alt+Space) and ksni tray icon
 
-[Unreleased]: https://github.com/example/promptly/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/example/promptly/releases/tag/v0.1.0
+[Unreleased]: https://github.com/mholtzhausen/promptly/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/mholtzhausen/promptly/releases/tag/v0.8.0
+[0.1.0]: https://github.com/mholtzhausen/promptly/releases/tag/v0.1.0
