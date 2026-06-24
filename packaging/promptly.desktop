@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Promptly
+Comment=System-tray prompt template manager
+Exec=promptly
+Icon=accessories-text-editor
+Terminal=false
+Categories=Utility;TextTools;
+StartupNotify=false
+X-GNOME-Autostart-enabled=true

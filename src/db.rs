@@ -54,7 +54,15 @@ pub struct HistoryListResult {
 pub fn init_db(db_path: &Path) -> Result<Connection> {
     let conn = Connection::open(db_path).context("Failed to open SQLite database")?;
     conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS prompts (
+        "PRAGMA journal_mode=WAL;
+         PRAGMA synchronous=NORMAL;",
+    )
+    .context("Failed to set SQLite pragmas")?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS prompts (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             name        TEXT UNIQUE NOT NULL,
             description TEXT NOT NULL DEFAULT '',
@@ -77,8 +85,36 @@ pub fn init_db(db_path: &Path) -> Result<Connection> {
             ON prompt_history (created_at DESC);",
     )
     .context("Failed to create prompt_history table")?;
-    ensure_description_column(&conn)?;
+    run_migrations(&conn)?;
     Ok(conn)
+}
+
+const CURRENT_SCHEMA_VERSION: i64 = 1;
+
+fn run_migrations(conn: &Connection) -> Result<()> {
+    let version: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    if version < 1 {
+        ensure_description_column(conn)?;
+        conn.execute(
+            "INSERT INTO schema_version (version) VALUES (?1)",
+            params![1],
+        )?;
+    }
+
+    if version > CURRENT_SCHEMA_VERSION {
+        log::warn!(
+            "Database schema version {version} is newer than supported {CURRENT_SCHEMA_VERSION}"
+        );
+    }
+
+    Ok(())
 }
 
 fn ensure_description_column(conn: &Connection) -> Result<()> {
@@ -216,26 +252,23 @@ pub fn insert_history_if_new(
     let variables_json = serde_json::to_string(values).context("Failed to serialize variables")?;
     let created_at = unix_now_secs()?;
 
-    let inserted = conn
-        .execute(
-            "INSERT OR IGNORE INTO prompt_history
+    let inserted = conn.execute(
+        "INSERT OR IGNORE INTO prompt_history
              (content_hash, title, content, variables_json, prompt_id, prompt_name, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![
-                hash,
-                title,
-                content,
-                variables_json,
-                prompt_id,
-                prompt_name,
-                created_at
-            ],
-        )?
-        > 0;
+        params![
+            hash,
+            title,
+            content,
+            variables_json,
+            prompt_id,
+            prompt_name,
+            created_at
+        ],
+    )? > 0;
 
-    let total_count: i64 = conn.query_row("SELECT COUNT(*) FROM prompt_history", [], |row| {
-        row.get(0)
-    })?;
+    let total_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM prompt_history", [], |row| row.get(0))?;
 
     Ok((inserted, total_count))
 }
@@ -243,9 +276,8 @@ pub fn insert_history_if_new(
 pub fn list_history(conn: &Connection) -> Result<HistoryListResult> {
     let total_count = history_count(conn)?;
 
-    let mut stmt = conn.prepare(
-        "SELECT id, title, created_at FROM prompt_history ORDER BY created_at DESC",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT id, title, created_at FROM prompt_history ORDER BY created_at DESC")?;
     let entries = stmt
         .query_map([], |row| {
             Ok(HistoryListItem {
@@ -482,8 +514,7 @@ mod tests {
     #[test]
     fn test_get_delete_and_prune_history() {
         let (conn, _f) = test_db();
-        let (inserted, _) =
-            insert_history_if_new(&conn, "content", None, "tpl", &[]).unwrap();
+        let (inserted, _) = insert_history_if_new(&conn, "content", None, "tpl", &[]).unwrap();
         assert!(inserted);
 
         let list = list_history(&conn).unwrap();

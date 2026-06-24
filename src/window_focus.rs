@@ -47,7 +47,7 @@ pub fn x11_move_window(tao_window: &tao::window::Window, pos: PhysicalPosition<i
     use tao::platform::unix::WindowExtUnix;
 
     let gtk_win = tao_window.gtk_window();
-    let Some(xid) = x11_window_id(&gtk_win) else {
+    let Some(xid) = x11_window_id(gtk_win) else {
         return;
     };
 
@@ -177,11 +177,8 @@ fn x11_request_active(gtk_win: &gtk::ApplicationWindow) {
     };
 
     unsafe {
-        let active = x11::xlib::XInternAtom(
-            display,
-            NET_ACTIVE_WINDOW.as_ptr().cast(),
-            x11::xlib::False,
-        );
+        let active =
+            x11::xlib::XInternAtom(display, NET_ACTIVE_WINDOW.as_ptr().cast(), x11::xlib::False);
         if active == 0 {
             return;
         }

@@ -2,6 +2,7 @@
 
 mod effects;
 mod history;
+mod limits;
 mod prompts;
 mod response;
 mod types;
@@ -165,11 +166,7 @@ mod tests {
     fn hide_window_sets_hide_flag() {
         let (backend, _f) = test_backend();
         let effects = FakeEffects::default();
-        let handled = handle_raw(
-            &backend,
-            &effects,
-            r#"{"id":"h","command":"hideWindow"}"#,
-        );
+        let handled = handle_raw(&backend, &effects, r#"{"id":"h","command":"hideWindow"}"#);
         assert!(handled.hide_window);
         assert!(!handled.quit_app);
     }

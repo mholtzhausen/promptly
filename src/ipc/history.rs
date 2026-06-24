@@ -6,7 +6,7 @@ use super::IpcBackend;
 
 impl IpcBackend {
     pub(super) fn cmd_list_history(&self, id: &str) -> super::response::CmdResult {
-        match self.with_conn(|conn| db::list_history(conn)) {
+        match self.with_conn(db::list_history) {
             Ok(result) => cmd_ok(id, result),
             Err(e) => {
                 log::error!("listHistory failed: {}", e);
@@ -38,15 +38,14 @@ impl IpcBackend {
         id: &str,
         p: UpdateHistoryEntryPayload,
     ) -> super::response::CmdResult {
+        if let Err(msg) = super::limits::validate_copy_text(&p.content) {
+            return (super::response::err_json::<bool>(id, msg), false, false);
+        }
         match self.with_conn(|conn| db::update_history_entry(conn, p.id, &p.content)) {
             Ok(()) => cmd_ok(id, true),
             Err(e) => {
                 log::error!("updateHistoryEntry failed: {}", e);
-                (
-                    super::response::err_json::<bool>(id, e),
-                    false,
-                    false,
-                )
+                (super::response::err_json::<bool>(id, e), false, false)
             }
         }
     }
@@ -60,11 +59,7 @@ impl IpcBackend {
             Ok(()) => cmd_ok(id, true),
             Err(e) => {
                 log::error!("deleteHistoryEntry failed: {}", e);
-                (
-                    super::response::err_json::<bool>(id, e),
-                    false,
-                    false,
-                )
+                (super::response::err_json::<bool>(id, e), false, false)
             }
         }
     }
@@ -74,15 +69,14 @@ impl IpcBackend {
         id: &str,
         p: PruneHistoryPayload,
     ) -> super::response::CmdResult {
+        if let Err(msg) = super::limits::validate_prune_keep(p.keep) {
+            return (super::response::err_json::<bool>(id, msg), false, false);
+        }
         match self.with_conn(|conn| db::prune_history_keep_last(conn, p.keep)) {
             Ok(()) => cmd_ok(id, true),
             Err(e) => {
                 log::error!("pruneHistory failed: {}", e);
-                (
-                    super::response::err_json::<bool>(id, e),
-                    false,
-                    false,
-                )
+                (super::response::err_json::<bool>(id, e), false, false)
             }
         }
     }
@@ -95,8 +89,10 @@ mod tests {
     #[test]
     fn history_list_get_delete_and_prune() {
         let (backend, _f) = test_backend();
-        let mut effects = FakeEffects::default();
-        effects.copy_ok = true;
+        let effects = FakeEffects {
+            copy_ok: true,
+            ..Default::default()
+        };
 
         let copy_raw = serde_json::json!({
             "id": "h1",
@@ -112,11 +108,7 @@ mod tests {
         .to_string();
         handle(&backend, &effects, &copy_raw);
 
-        let list_resp = handle(
-            &backend,
-            &effects,
-            r#"{"id":"h2","command":"listHistory"}"#,
-        );
+        let list_resp = handle(&backend, &effects, r#"{"id":"h2","command":"listHistory"}"#);
         assert_eq!(list_resp["ok"], true);
         assert_eq!(list_resp["data"]["totalCount"], 1);
         let entry_id = list_resp["data"]["entries"][0]["id"].as_i64().unwrap();
@@ -159,11 +151,7 @@ mod tests {
         );
         assert_eq!(prune_resp["data"], true);
 
-        let list_after = handle(
-            &backend,
-            &effects,
-            r#"{"id":"h6","command":"listHistory"}"#,
-        );
+        let list_after = handle(&backend, &effects, r#"{"id":"h6","command":"listHistory"}"#);
         assert_eq!(list_after["data"]["totalCount"], 0);
     }
 }

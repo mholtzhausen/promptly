@@ -17,12 +17,34 @@ pub fn config_dir() -> PathBuf {
     dir.join(APP_NAME)
 }
 
-pub fn db_path() -> PathBuf {
-    config_dir().join("prompts.db")
-}
-
 pub fn config_file_path() -> PathBuf {
     config_dir().join("config.yml")
+}
+
+pub fn state_dir() -> PathBuf {
+    if let Ok(path) = std::env::var("XDG_STATE_HOME") {
+        return PathBuf::from(path).join(APP_NAME);
+    }
+    dirs_next::home_dir()
+        .unwrap_or_else(config_dir)
+        .join(".local/state")
+        .join(APP_NAME)
+}
+
+pub fn log_file_path() -> PathBuf {
+    state_dir().join("promptly.log")
+}
+
+pub fn lock_file_path() -> PathBuf {
+    config_dir().join("promptly.lock")
+}
+
+/// Override default DB path (used by tests and `PROMPTLY_DB_PATH`).
+pub fn db_path() -> PathBuf {
+    if let Ok(path) = std::env::var("PROMPTLY_DB_PATH") {
+        return PathBuf::from(path);
+    }
+    config_dir().join("prompts.db")
 }
 
 pub fn ensure_config_dir() -> anyhow::Result<()> {

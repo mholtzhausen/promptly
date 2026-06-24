@@ -78,7 +78,10 @@ impl PromptlyWebviewApp {
 
         let proxy_for_ipc = proxy.clone();
         let builder = WebViewBuilder::new()
-            .with_html(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/frontend/dist/index.html")))
+            .with_html(include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/frontend/dist/index.html"
+            )))
             .with_ipc_handler(move |request| {
                 let _ = proxy_for_ipc.send_event(AppEvent::Ipc(request.body().clone()));
             })
@@ -115,11 +118,9 @@ impl PromptlyWebviewApp {
         let mut show_on_start = show_on_start;
         event_loop.run(move |event, _target, control_flow| {
             *control_flow = ControlFlow::Wait;
-            if show_on_start {
-                if matches!(&event, Event::NewEvents(StartCause::Init)) {
-                    show_on_start = false;
-                    state.show_window();
-                }
+            if show_on_start && matches!(&event, Event::NewEvents(StartCause::Init)) {
+                show_on_start = false;
+                state.show_window();
             }
             match event {
                 Event::UserEvent(AppEvent::ToggleWindow) => state.toggle_window(),
@@ -153,7 +154,10 @@ impl PromptlyWebviewApp {
         }
     }
 
-    fn centered_position(&self, window_size: crate::config::WindowSize) -> Option<PhysicalPosition<i32>> {
+    fn centered_position(
+        &self,
+        window_size: crate::config::WindowSize,
+    ) -> Option<PhysicalPosition<i32>> {
         let monitor = self
             .window
             .current_monitor()
@@ -162,7 +166,10 @@ impl PromptlyWebviewApp {
         let win_w = window_size.width * scale;
         let win_h = window_size.height * scale;
         let PhysicalPosition { x: mx, y: my } = monitor.position();
-        let PhysicalSize { width: mw, height: mh } = monitor.size();
+        let PhysicalSize {
+            width: mw,
+            height: mh,
+        } = monitor.size();
         let cx = mx + ((mw as f64 - win_w) / 2.0).round() as i32;
         let cy = my + ((mh as f64 - win_h) / 2.0).round() as i32;
         Some(PhysicalPosition::new(cx, cy))
@@ -244,9 +251,9 @@ impl PromptlyWebviewApp {
     }
 
     fn notify_frontend_show(&self) {
-        let _ = self.webview.evaluate_script(
-            "window.__promptlyOnShow && window.__promptlyOnShow();",
-        );
+        let _ = self
+            .webview
+            .evaluate_script("window.__promptlyOnShow && window.__promptlyOnShow();");
     }
 
     fn handle_ipc(&self, raw: &str) {

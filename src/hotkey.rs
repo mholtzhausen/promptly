@@ -61,7 +61,7 @@ fn register_x11_grab(tx: &std::sync::mpsc::Sender<()>) -> bool {
 
         let display_ptr = display as usize;
         let keycode_val = keycode as usize;
-        let base_mods = (xlib::ControlMask | xlib::Mod1Mask) as u32;
+        let base_mods = xlib::ControlMask | xlib::Mod1Mask;
         let tx_clone = tx.clone();
 
         let thread_body: Box<dyn FnOnce() + Send> = Box::new(move || {
@@ -105,10 +105,8 @@ fn register_rdev_hotkey(tx: std::sync::mpsc::Sender<()>) {
                 match key {
                     Key::ControlLeft | Key::ControlRight => *cp.lock().unwrap() = true,
                     Key::Alt | Key::AltGr => *ap.lock().unwrap() = true,
-                    Key::Space => {
-                        if *cp.lock().unwrap() && *ap.lock().unwrap() {
-                            let _ = tx.send(());
-                        }
+                    Key::Space if *cp.lock().unwrap() && *ap.lock().unwrap() => {
+                        let _ = tx.send(());
                     }
                     _ => {}
                 }

@@ -1,0 +1,13 @@
+[Unit]
+Description=Promptly prompt template manager
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/promptly
+Restart=on-failure
+RestartSec=3
+Environment=PROMPTLY_FOREGROUND=1
+
+[Install]
+WantedBy=default.target

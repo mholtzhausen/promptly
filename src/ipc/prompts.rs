@@ -11,7 +11,7 @@ use super::IpcBackend;
 
 impl IpcBackend {
     pub(super) fn cmd_list_prompts(&self, id: &str) -> super::response::CmdResult {
-        match self.with_conn(|conn| db::load_prompts(conn)) {
+        match self.with_conn(db::load_prompts) {
             Ok(prompts) => cmd_ok(id, prompts),
             Err(e) => {
                 log::error!("listPrompts failed: {}", e);
@@ -29,6 +29,14 @@ impl IpcBackend {
         let name = p.name.trim().to_string();
         let description = p.description.trim().to_string();
         let content = p.content;
+
+        if let Err(msg) = super::limits::validate_prompt_fields(&name, &description, &content) {
+            return (
+                super::response::err_json::<SavePromptResult>(id, msg),
+                false,
+                false,
+            );
+        }
 
         if name.is_empty() || description.is_empty() || content.trim().is_empty() {
             return cmd_ok(
@@ -68,10 +76,7 @@ impl IpcBackend {
             }
             Err(e) => {
                 log::error!("savePrompt failed: {}", e);
-                effects.notify(
-                    "Prompt not saved",
-                    "Could not save the prompt template.",
-                );
+                effects.notify("Prompt not saved", "Could not save the prompt template.");
                 (
                     super::response::err_json::<SavePromptResult>(id, e),
                     false,
@@ -89,10 +94,7 @@ impl IpcBackend {
     ) -> super::response::CmdResult {
         match self.with_conn(|conn| db::delete_prompt(conn, p.id)) {
             Ok(()) => {
-                effects.notify(
-                    "Prompt deleted",
-                    &format!("Deleted template '{}'", p.name),
-                );
+                effects.notify("Prompt deleted", &format!("Deleted template '{}'", p.name));
                 cmd_ok(id, true)
             }
             Err(e) => {
@@ -101,21 +103,33 @@ impl IpcBackend {
                     "Prompt not deleted",
                     "Could not delete the prompt template.",
                 );
-                (
-                    super::response::err_json::<bool>(id, e),
-                    false,
-                    false,
-                )
+                (super::response::err_json::<bool>(id, e), false, false)
             }
         }
     }
 
-    pub(super) fn cmd_variables(
-        &self,
-        id: &str,
-        p: TemplatePayload,
-    ) -> super::response::CmdResult {
+    pub(super) fn cmd_variables(&self, id: &str, p: TemplatePayload) -> super::response::CmdResult {
+        if let Err(msg) = super::limits::validate_template_content(&p.content) {
+            return (
+                super::response::err_json::<Vec<VariableDto>>(id, msg),
+                false,
+                false,
+            );
+        }
         let vars = prompt_parser::parse_variables(&p.content);
+        if vars.len() > super::limits::MAX_VARIABLES_PER_TEMPLATE {
+            return (
+                super::response::err_json::<Vec<VariableDto>>(
+                    id,
+                    format!(
+                        "Too many variables (max {})",
+                        super::limits::MAX_VARIABLES_PER_TEMPLATE
+                    ),
+                ),
+                false,
+                false,
+            );
+        }
         let dtos: Vec<VariableDto> = vars
             .into_iter()
             .map(|v| {
@@ -143,10 +157,20 @@ impl IpcBackend {
         id: &str,
         p: InterpolatePayload,
     ) -> super::response::CmdResult {
-        let pairs: Vec<(&str, &str)> = p
+        if let Err(msg) = super::limits::validate_template_content(&p.template) {
+            return (super::response::err_json::<String>(id, msg), false, false);
+        }
+        let pairs_owned: Vec<(String, String)> = p
             .values
             .iter()
-            .map(|v| (v.name.as_str(), v.value.as_str()))
+            .map(|v| (v.name.clone(), v.value.clone()))
+            .collect();
+        if let Err(msg) = super::limits::validate_interpolate_values(&pairs_owned) {
+            return (super::response::err_json::<String>(id, msg), false, false);
+        }
+        let pairs: Vec<(&str, &str)> = pairs_owned
+            .iter()
+            .map(|(n, v)| (n.as_str(), v.as_str()))
             .collect();
         let result = prompt_parser::interpolate(&p.template, &pairs);
         cmd_ok(id, result)
@@ -158,6 +182,25 @@ impl IpcBackend {
         p: CopyPromptPayload,
         effects: &impl DesktopEffects,
     ) -> super::response::CmdResult {
+        if let Err(msg) = super::limits::validate_copy_text(&p.text) {
+            return (
+                super::response::err_json::<CopyPromptResult>(id, msg),
+                false,
+                false,
+            );
+        }
+        let pairs: Vec<(String, String)> = p
+            .values
+            .iter()
+            .map(|v| (v.name.clone(), v.value.clone()))
+            .collect();
+        if let Err(msg) = super::limits::validate_interpolate_values(&pairs) {
+            return (
+                super::response::err_json::<CopyPromptResult>(id, msg),
+                false,
+                false,
+            );
+        }
         match effects.copy_text(&p.text) {
             Ok(()) => {
                 let body = match p.message_kind {
@@ -279,11 +322,7 @@ mod tests {
         assert!(resp["data"]["prompt"].is_null());
         assert!(effects.notifications.borrow().is_empty());
 
-        let list = handle(
-            &backend,
-            &effects,
-            r#"{"id":"x","command":"listPrompts"}"#,
-        );
+        let list = handle(&backend, &effects, r#"{"id":"x","command":"listPrompts"}"#);
         assert_eq!(list["data"].as_array().unwrap().len(), 0);
     }
 
@@ -358,8 +397,10 @@ mod tests {
     #[test]
     fn copy_prompt_uses_existing_notification_literals() {
         let (backend, _f) = test_backend();
-        let mut effects = FakeEffects::default();
-        effects.copy_ok = true;
+        let effects = FakeEffects {
+            copy_ok: true,
+            ..Default::default()
+        };
 
         let raw = serde_json::json!({
             "id": "5",
@@ -377,7 +418,10 @@ mod tests {
         assert_eq!(effects.copied.borrow()[0], "Hello");
         assert_eq!(
             effects.notifications.borrow()[0],
-            ("Prompt copied".to_string(), "'plain-copy' copied to clipboard".to_string())
+            (
+                "Prompt copied".to_string(),
+                "'plain-copy' copied to clipboard".to_string()
+            )
         );
         assert_eq!(resp["data"]["copied"], true);
         assert_eq!(resp["data"]["historyInserted"], true);
@@ -398,7 +442,10 @@ mod tests {
         handle(&backend, &effects, &raw);
         assert_eq!(
             effects.notifications.borrow()[1],
-            ("Prompt copied".to_string(), "'with-vars' copied to clipboard!".to_string())
+            (
+                "Prompt copied".to_string(),
+                "'with-vars' copied to clipboard!".to_string()
+            )
         );
 
         let raw = serde_json::json!({
@@ -421,8 +468,10 @@ mod tests {
     #[test]
     fn copy_prompt_skip_history() {
         let (backend, _f) = test_backend();
-        let mut effects = FakeEffects::default();
-        effects.copy_ok = true;
+        let effects = FakeEffects {
+            copy_ok: true,
+            ..Default::default()
+        };
 
         let raw = serde_json::json!({
             "id": "sk1",
@@ -479,17 +528,10 @@ mod tests {
         assert_eq!(del_resp["data"], true);
 
         let notifs = effects.notifications.borrow();
-        let delete_notif = notifs
-            .iter()
-            .find(|(s, _)| s == "Prompt deleted")
-            .unwrap();
+        let delete_notif = notifs.iter().find(|(s, _)| s == "Prompt deleted").unwrap();
         assert_eq!(delete_notif.1, "Deleted template 'to-delete'");
 
-        let list = handle(
-            &backend,
-            &effects,
-            r#"{"id":"x","command":"listPrompts"}"#,
-        );
+        let list = handle(&backend, &effects, r#"{"id":"x","command":"listPrompts"}"#);
         assert_eq!(list["data"].as_array().unwrap().len(), 0);
     }
 }

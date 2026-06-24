@@ -39,6 +39,10 @@ pub fn handle(backend: &IpcBackend, effects: &FakeEffects, raw: &str) -> serde_j
     serde_json::from_str::<serde_json::Value>(&handled.response_json).unwrap()
 }
 
-pub fn handle_raw(backend: &IpcBackend, effects: &FakeEffects, raw: &str) -> super::types::HandledIpc {
+pub fn handle_raw(
+    backend: &IpcBackend,
+    effects: &FakeEffects,
+    raw: &str,
+) -> super::types::HandledIpc {
     backend.handle(raw, effects)
 }

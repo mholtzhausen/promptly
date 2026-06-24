@@ -38,12 +38,26 @@ Other targets:
 ```bash
 make build            # release build
 make frontend-build   # frontend only
-make test             # frontend build + cargo test
-make install          # install to /usr/local/bin
+make test             # frontend build + cargo + vitest
+make lint             # fmt, clippy, tsc
+make install          # install to /usr/local/bin (sudo)
+make install-user     # install to ~/.local/bin + desktop + systemd user unit
+make uninstall        # remove user-local install
 make clean
 ```
 
 Or use `./run.sh` (equivalent to `make run`).
+
+## CLI
+
+```bash
+promptly --version              # print version
+promptly --show                 # show the prompt window (used by tray/hotkey path)
+promptly export [path]          # export prompts (+ history) to JSON
+promptly import <path>          # import prompts from JSON
+```
+
+Set `PROMPTLY_DB_PATH` to override the default SQLite location. Set `RUST_LOG=promptly=debug` for verbose logging.
 
 ## Data Locations
 
@@ -51,3 +65,13 @@ Or use `./run.sh` (equivalent to `make run`).
 |---|---|
 | `~/.config/promptly/prompts.db` | SQLite prompts + copy history |
 | `~/.config/promptly/config.yml` | Window size preferences |
+| `~/.config/promptly/promptly.lock` | Single-instance lock file |
+| `~/.local/state/promptly/promptly.log` | Daemon log file (when backgrounded) |
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). CI runs `make lint`, `cargo test`, `cargo audit`, and frontend tests on every PR.
+
+## Troubleshooting
+
+See [docs/troubleshooting.md](docs/troubleshooting.md) for hotkey, tray, and WebKitGTK issues.

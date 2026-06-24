@@ -50,6 +50,7 @@ export function HistoryView({
           ref={historySearchRef}
           type="search"
           placeholder="Filter history..."
+          aria-label="Filter history"
           value={historyQuery}
           onChange={(e) => {
             setHistoryQuery(e.target.value);
@@ -67,10 +68,12 @@ export function HistoryView({
           }}
         />
       </div>
-      <div id="history-list" ref={historyListRef}>
+      <div id="history-list" ref={historyListRef} role="listbox" aria-label="Copy history">
         {filteredHistory.map((entry, i) => (
           <div
             key={entry.id}
+            role="option"
+            aria-selected={i === historySelectedIndex}
             className={
               "history-row" + (i === historySelectedIndex ? " selected" : "")
             }
@@ -98,7 +101,7 @@ export function HistoryView({
           <p className="history-warning">1000+ entries — consider pruning.</p>
         )}
         <div className="history-footer-row">
-          <span className="history-status-text">
+            <span className="history-status-text" aria-live="polite">
             {historyTotalCount === 0
               ? "No history yet. Copy a prompt to record it."
               : historyQuery && filteredHistory.length === 0

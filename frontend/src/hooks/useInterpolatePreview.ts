@@ -6,6 +6,7 @@ export function useInterpolatePreview(
   template: string | undefined,
   values: Record<string, string>,
   setPreview: (value: string) => void,
+  onError?: (message: string) => void,
 ) {
   useEffect(() => {
     if (!template) return;
@@ -21,12 +22,16 @@ export function useInterpolatePreview(
             })),
           });
           setPreview(result);
-        } catch {
-          // silent
+        } catch (err) {
+          const msg =
+            err instanceof Error && err.message
+              ? err.message
+              : "Could not update preview.";
+          onError?.(msg);
         }
       })();
     }, 100);
 
     return () => window.clearTimeout(timer);
-  }, [template, values, setPreview]);
+  }, [template, values, setPreview, onError]);
 }

@@ -17,6 +17,7 @@ type ListViewProps = {
   onSelectPrompt: (p: Prompt) => void;
   onEditPrompt: (p: Prompt) => void;
   onDeletePrompt: (p: Prompt) => void;
+  statusError: string | null;
 };
 
 export function ListView({
@@ -35,6 +36,7 @@ export function ListView({
   onSelectPrompt,
   onEditPrompt,
   onDeletePrompt,
+  statusError,
 }: ListViewProps) {
   return (
     <div className="app list-view" onKeyDown={onKeyDown}>
@@ -44,6 +46,7 @@ export function ListView({
           ref={searchRef}
           type="search"
           placeholder="Filter prompts..."
+          aria-label="Filter prompts"
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -61,17 +64,29 @@ export function ListView({
             focusSearch();
           }}
         />
-        <button id="history-button" title="Copy history" onClick={onOpenHistory}>
+        <button
+          id="history-button"
+          title="Copy history"
+          aria-label="Open copy history"
+          onClick={onOpenHistory}
+        >
           ⟳
         </button>
-        <button id="add-button" title="Add prompt" onClick={onOpenNew}>
+        <button
+          id="add-button"
+          title="Add prompt"
+          aria-label="Add new prompt"
+          onClick={onOpenNew}
+        >
           +
         </button>
       </div>
-      <div id="prompt-list" ref={listRef}>
+      <div id="prompt-list" ref={listRef} role="listbox" aria-label="Prompt templates">
         {filtered.map((p, i) => (
           <div
             key={p.id}
+            role="option"
+            aria-selected={i === selectedIndex}
             className={"prompt-row" + (i === selectedIndex ? " selected" : "")}
             onClick={(e) => {
               setSelectedIndex(i);
@@ -112,8 +127,15 @@ export function ListView({
           </div>
         ))}
       </div>
-      <div id="status-label" className="panel-footer">
-        {prompts.length === 0
+      <div
+        id="status-label"
+        className="panel-footer"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {statusError ? (
+          <p className="form-error">{statusError}</p>
+        ) : prompts.length === 0
           ? "No prompts yet. Click + to add one."
           : query && filtered.length === 0
             ? `No matches for "${query}"`

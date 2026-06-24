@@ -60,11 +60,18 @@
 ```bash
 make run              # frontend build + cargo release + launch
 make build            # frontend build + cargo build --release
-make test             # frontend build + cargo test
+make test             # frontend build + cargo test + vitest
+make lint             # cargo fmt --check, clippy, tsc
 make frontend-build   # npm ci + vite build only
 make clean            # rm frontend/dist + cargo clean
 make install          # copy to /usr/local/bin
+make install-user     # ~/.local/bin + .desktop + systemd user unit
+make uninstall        # remove user-local install
 ```
+
+CLI: `promptly --version`, `promptly export [path]`, `promptly import <path>`.
+Logs: `~/.local/state/promptly/promptly.log` when daemonized; `RUST_LOG=promptly=debug`.
+Single instance: flock on `~/.config/promptly/promptly.lock`.
 
 Convenience script: `./run.sh` (same as `make run`, bash-only).
 

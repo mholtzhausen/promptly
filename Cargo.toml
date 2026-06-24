@@ -22,6 +22,7 @@ ksni = { version = "0.3", features = ["blocking"] }
 notify-rust = "4"
 dirs-next = "2"
 x11 = "2.21"
+fs2 = "0.4"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18.2"

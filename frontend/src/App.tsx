@@ -41,6 +41,15 @@ export default function App() {
   const [historyDetail, setHistoryDetail] = useState<HistoryEntry | null>(null);
   const [historyDetailContent, setHistoryDetailContent] = useState("");
   const [pruneMenuOpen, setPruneMenuOpen] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+
+  const reportStatusError = useCallback((message: string) => {
+    setStatusError(message);
+  }, []);
+
+  const clearStatusError = useCallback(() => {
+    setStatusError(null);
+  }, []);
 
   const searchRef = useRef<HTMLInputElement>(null);
   const historySearchRef = useRef<HTMLInputElement>(null);
@@ -58,7 +67,7 @@ export default function App() {
     patchPrompt,
     savePrompt,
     deletePrompt,
-  } = usePrompts();
+  } = usePrompts(reportStatusError);
 
   const {
     historyEntries,
@@ -68,15 +77,16 @@ export default function App() {
     pruneHistoryKeep,
     getHistoryEntry,
     updateHistoryContent,
-  } = useHistory();
+  } = useHistory(reportStatusError);
 
   const onShow = useCallback(() => {
     setView("list");
     setQuery("");
     setSelectedIndex(0);
+    clearStatusError();
     void loadPrompts();
     focusSearch();
-  }, [loadPrompts, focusSearch]);
+  }, [loadPrompts, focusSearch, clearStatusError]);
 
   useHostBridge({ onShow, focusSearch });
 
@@ -183,10 +193,14 @@ export default function App() {
       });
       setPreview(interp);
       setView("variables");
-    } catch {
-      // silent
+    } catch (err) {
+      reportStatusError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Could not open prompt variables.",
+      );
     }
-  }, []);
+  }, [reportStatusError]);
 
   const openEdit = useCallback((p: Prompt) => {
     setEditingPrompt(p);
@@ -252,11 +266,15 @@ export default function App() {
         setHistoryDetail(entry);
         setHistoryDetailContent(entry.content);
         setView("historyDetail");
-      } catch {
-        // silent
+      } catch (err) {
+        reportStatusError(
+          err instanceof Error && err.message
+            ? err.message
+            : "Could not load history entry.",
+        );
       }
     },
-    [getHistoryEntry],
+    [getHistoryEntry, reportStatusError],
   );
 
   const closeHistoryDetail = useCallback(() => {
@@ -382,7 +400,12 @@ export default function App() {
     setVariableValues((prev) => ({ ...prev, [name]: value }));
   }, []);
 
-  useInterpolatePreview(variablePrompt?.content, variableValues, setPreview);
+  useInterpolatePreview(
+    variablePrompt?.content,
+    variableValues,
+    setPreview,
+    reportStatusError,
+  );
 
   const resetVariables = useCallback(() => {
     setVariablePrompt(null);
@@ -409,11 +432,15 @@ export default function App() {
           values: buildCopyValues(),
         });
         await afterCopy();
-      } catch {
-        // silent
+      } catch (err) {
+        reportStatusError(
+          err instanceof Error && err.message
+            ? err.message
+            : "Could not copy prompt.",
+        );
       }
     },
-    [variablePrompt, preview, variables.length, buildCopyValues],
+    [variablePrompt, preview, variables.length, buildCopyValues, reportStatusError],
   );
 
   const copyAndBackToList = useCallback(async () => {
@@ -481,10 +508,14 @@ export default function App() {
         await updateHistoryContent(historyDetail.id, historyDetailContent);
         setHistoryDetail({ ...historyDetail, content: historyDetailContent });
       }
-    } catch {
-      // silent
+    } catch (err) {
+      reportStatusError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Could not copy from history.",
+      );
     }
-  }, [historyDetail, historyDetailContent, updateHistoryContent]);
+  }, [historyDetail, historyDetailContent, updateHistoryContent, reportStatusError]);
 
   const handlePruneKeep = useCallback(
     async (keep: number) => {
@@ -588,6 +619,7 @@ export default function App() {
       onSelectPrompt={(p) => void selectPrompt(p)}
       onEditPrompt={openEdit}
       onDeletePrompt={openDelete}
+      statusError={statusError}
     />
   );
 }
