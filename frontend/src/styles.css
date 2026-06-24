@@ -20,12 +20,13 @@ body {
 }
 
 :root {
+  --pane-padding: 10px;
   --panel-shadow-down: 0 2px 6px rgba(28, 27, 24, 0.07);
   --panel-shadow-up: 0 -2px 6px rgba(28, 27, 24, 0.07);
 }
 
 .app {
-  padding: 6px;
+  padding: var(--pane-padding);
   display: flex;
   flex-direction: column;
 }
@@ -49,8 +50,8 @@ body {
   flex-shrink: 0;
   position: relative;
   z-index: 2;
-  margin: -6px -6px 0;
-  padding: 8px 6px 10px;
+  margin: calc(-1 * var(--pane-padding)) calc(-1 * var(--pane-padding)) 0;
+  padding: 8px var(--pane-padding) 10px;
   background-color: #f9f7f3;
   box-shadow: var(--panel-shadow-down);
 }
@@ -59,8 +60,8 @@ body {
   flex-shrink: 0;
   position: relative;
   z-index: 2;
-  margin: 0 -6px -6px;
-  padding: 10px 6px 8px;
+  margin: 0 calc(-1 * var(--pane-padding)) calc(-1 * var(--pane-padding));
+  padding: 10px var(--pane-padding) 8px;
   background-color: #f9f7f3;
   box-shadow: var(--panel-shadow-up);
 }
@@ -102,11 +103,17 @@ body {
   background-color: #8fa7b9;
 }
 
+/* ── Scrollable panes (reserve symmetric gutter for scrollbars) ───────── */
+#prompt-list,
+.editor-body,
+.variables-body {
+  scrollbar-gutter: stable both-edges;
+}
+
 /* ── Prompt list ─────────────────────────────────────────────────────── */
 #prompt-list {
   flex: 1;
   min-height: 0;
-  margin: 0 6px;
   overflow-y: auto;
 }
 
@@ -185,7 +192,7 @@ h1 {
   font-size: 15px;
   color: #1c1b18;
   font-weight: 700;
-  margin: 8px 6px 12px;
+  margin: 8px 0 12px;
 }
 
 .editor-header,
@@ -197,7 +204,6 @@ h1 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  margin: 0 6px;
 }
 
 .editor-body form {
@@ -230,7 +236,6 @@ form {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin: 0 6px;
 }
 
 label {
@@ -328,7 +333,7 @@ button.danger {
 
 /* ── Delete confirmation ─────────────────────────────────────────────── */
 .confirm-msg {
-  margin: 4px 6px 12px;
+  margin: 4px 0 12px;
   font-size: 13px;
 }
 
@@ -340,7 +345,6 @@ button.danger {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  margin: 0 6px;
 }
 
 .variables-footer .buttons {
