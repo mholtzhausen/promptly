@@ -12,7 +12,7 @@ body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background-color: #f9f7f3;
+  background-color: var(--content-bg);
 }
 
 #root {
@@ -21,6 +21,9 @@ body {
 
 :root {
   --pane-padding: 10px;
+  --content-bg: #f9f7f3;
+  --panel-chrome-bg: #f0ede5;
+  --panel-chrome-border: #ddd9d0;
   --panel-shadow-down: 0 2px 6px rgba(28, 27, 24, 0.07);
   --panel-shadow-up: 0 -2px 6px rgba(28, 27, 24, 0.07);
 }
@@ -56,7 +59,8 @@ body {
   z-index: 2;
   margin: calc(-1 * var(--pane-padding)) calc(-1 * var(--pane-padding)) 0;
   padding: 8px var(--pane-padding) 10px;
-  background-color: #f9f7f3;
+  background-color: var(--panel-chrome-bg);
+  border-bottom: 1px solid var(--panel-chrome-border);
   box-shadow: var(--panel-shadow-down);
 }
 
@@ -66,7 +70,8 @@ body {
   z-index: 2;
   margin: 0 calc(-1 * var(--pane-padding)) calc(-1 * var(--pane-padding));
   padding: 10px var(--pane-padding) 8px;
-  background-color: #f9f7f3;
+  background-color: var(--panel-chrome-bg);
+  border-top: 1px solid var(--panel-chrome-border);
   box-shadow: var(--panel-shadow-up);
 }
 
