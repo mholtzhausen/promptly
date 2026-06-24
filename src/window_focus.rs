@@ -14,6 +14,33 @@ pub fn set_window_opacity(tao_window: &tao::window::Window, opacity: f64) {
 #[cfg(not(target_os = "linux"))]
 pub fn set_window_opacity(_tao_window: &tao::window::Window, _opacity: f64) {}
 
+/// Cached X11 display for the Tao main thread (opened once, never closed).
+#[cfg(target_os = "linux")]
+fn x11_display() -> Option<*mut x11::xlib::Display> {
+    use std::sync::OnceLock;
+
+    static DISPLAY: OnceLock<Option<usize>> = OnceLock::new();
+    DISPLAY
+        .get_or_init(|| unsafe {
+            let display = x11::xlib::XOpenDisplay(std::ptr::null());
+            if display.is_null() {
+                None
+            } else {
+                Some(display as usize)
+            }
+        })
+        .map(|ptr| ptr as *mut x11::xlib::Display)
+}
+
+#[cfg(target_os = "linux")]
+fn x11_flush() {
+    if let Some(display) = x11_display() {
+        unsafe {
+            x11::xlib::XFlush(display);
+        }
+    }
+}
+
 /// Synchronous X11 move before the window is mapped (no-op on Wayland/non-X11).
 #[cfg(target_os = "linux")]
 pub fn x11_move_window(tao_window: &tao::window::Window, pos: PhysicalPosition<i32>) {
@@ -24,14 +51,13 @@ pub fn x11_move_window(tao_window: &tao::window::Window, pos: PhysicalPosition<i
         return;
     };
 
+    let Some(display) = x11_display() else {
+        return;
+    };
+
     unsafe {
-        let display = x11::xlib::XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return;
-        }
         x11::xlib::XMoveWindow(display, xid, pos.x, pos.y);
         x11::xlib::XFlush(display);
-        x11::xlib::XCloseDisplay(display);
     }
 }
 
@@ -80,12 +106,11 @@ fn x11_raise_and_keep_above(gtk_win: &gtk::ApplicationWindow) {
         return;
     };
 
-    unsafe {
-        let display = x11::xlib::XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return;
-        }
+    let Some(display) = x11_display() else {
+        return;
+    };
 
+    unsafe {
         let wm_state =
             x11::xlib::XInternAtom(display, NET_WM_STATE.as_ptr().cast(), x11::xlib::False);
         let wm_state_above = x11::xlib::XInternAtom(
@@ -94,7 +119,6 @@ fn x11_raise_and_keep_above(gtk_win: &gtk::ApplicationWindow) {
             x11::xlib::False,
         );
         if wm_state == 0 || wm_state_above == 0 {
-            x11::xlib::XCloseDisplay(display);
             return;
         }
 
@@ -136,8 +160,7 @@ fn x11_raise_and_keep_above(gtk_win: &gtk::ApplicationWindow) {
             &mut event,
         );
         x11::xlib::XRaiseWindow(display, xid);
-        x11::xlib::XFlush(display);
-        x11::xlib::XCloseDisplay(display);
+        x11_flush();
     }
 }
 
@@ -149,19 +172,17 @@ fn x11_request_active(gtk_win: &gtk::ApplicationWindow) {
         return;
     };
 
-    unsafe {
-        let display = x11::xlib::XOpenDisplay(std::ptr::null());
-        if display.is_null() {
-            return;
-        }
+    let Some(display) = x11_display() else {
+        return;
+    };
 
+    unsafe {
         let active = x11::xlib::XInternAtom(
             display,
             NET_ACTIVE_WINDOW.as_ptr().cast(),
             x11::xlib::False,
         );
         if active == 0 {
-            x11::xlib::XCloseDisplay(display);
             return;
         }
 
@@ -184,7 +205,6 @@ fn x11_request_active(gtk_win: &gtk::ApplicationWindow) {
             x11::xlib::SubstructureRedirectMask | x11::xlib::SubstructureNotifyMask,
             &mut event,
         );
-        x11::xlib::XFlush(display);
-        x11::xlib::XCloseDisplay(display);
+        x11_flush();
     }
 }

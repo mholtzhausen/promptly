@@ -152,7 +152,22 @@ pub fn load_prompts(conn: &Connection) -> Result<Vec<Prompt>> {
     Ok(prompts)
 }
 
-pub fn content_hash(content: &str) -> String {
+pub fn get_prompt_by_id(conn: &Connection, id: i64) -> Result<Option<Prompt>> {
+    let mut stmt =
+        conn.prepare("SELECT id, name, description, content FROM prompts WHERE id = ?1")?;
+    let mut rows = stmt.query(params![id])?;
+    let Some(row) = rows.next()? else {
+        return Ok(None);
+    };
+    Ok(Some(Prompt {
+        id: row.get(0)?,
+        name: row.get(1)?,
+        description: row.get(2)?,
+        content: row.get(3)?,
+    }))
+}
+
+fn content_hash(content: &str) -> String {
     let digest = Sha256::digest(content.as_bytes());
     format!("{digest:x}")
 }
@@ -167,6 +182,8 @@ fn truncate_title_value(value: &str) -> String {
 }
 
 pub fn build_history_title(prompt_name: &str, values: &[HistoryVariable]) -> String {
+    // Title format contract (parsed by frontend `lib/historyTitle.ts`):
+    // `[PromptName](var1:value1, var2:value2)` — empty vars: `[Name]()`
     if values.is_empty() {
         return format!("[{prompt_name}]()");
     }
@@ -312,32 +329,6 @@ pub fn history_count(conn: &Connection) -> Result<i64> {
         .context("Failed to count history rows")
 }
 
-#[allow(dead_code)]
-pub fn search_prompts(conn: &Connection, query: &str) -> Result<Vec<Prompt>> {
-    if query.is_empty() {
-        return load_prompts(conn);
-    }
-    let pattern = format!("%{}%", query);
-    let mut stmt = conn.prepare(
-        "SELECT id, name, description, content FROM prompts
-         WHERE name LIKE ?1 OR description LIKE ?1 OR content LIKE ?1
-         ORDER BY name ASC",
-    )?;
-    let prompts = stmt
-        .query_map(params![pattern], |row| {
-            Ok(Prompt {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                content: row.get(3)?,
-            })
-        })
-        .context("Failed to query search results")?
-        .collect::<Result<Vec<_>, _>>()
-        .context("Failed to map search rows")?;
-    Ok(prompts)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -384,24 +375,6 @@ mod tests {
         let id = upsert_prompt(&conn, "temp", "temporary", "content").unwrap();
         delete_prompt(&conn, id).unwrap();
         assert!(load_prompts(&conn).unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_search() {
-        let (conn, _f) = test_db();
-        upsert_prompt(&conn, "greet", "welcomes people", "Hello {{name}}").unwrap();
-        upsert_prompt(
-            &conn,
-            "farewell",
-            "goodbye flow",
-            "Bye {{name|text|friend|}}",
-        )
-        .unwrap();
-        let results = search_prompts(&conn, "welcomes").unwrap();
-        assert_eq!(results.len(), 1);
-        assert_eq!(results[0].name, "greet");
-        let all = search_prompts(&conn, "").unwrap();
-        assert_eq!(all.len(), 2);
     }
 
     #[test]

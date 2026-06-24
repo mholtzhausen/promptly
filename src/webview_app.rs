@@ -97,7 +97,7 @@ impl PromptlyWebviewApp {
         Ok(Self {
             window,
             webview,
-            backend: IpcBackend::new(db_path),
+            backend: IpcBackend::new(db_path)?,
             _tray: tray,
             event_proxy: proxy,
             focus_pending: Cell::new(false),
@@ -188,12 +188,10 @@ impl PromptlyWebviewApp {
         let _ = self.event_proxy.send_event(AppEvent::RevealWindow);
     }
 
-    /// Map and activate the window after geometry has settled while still hidden.
+    /// Map and activate the window after geometry was applied in `show_window`.
     fn reveal_window(&self) {
-        self.apply_centered_geometry();
         self.window.set_visible(true);
         window_focus::present_and_activate(&self.window);
-        self.focus_webview();
         self.schedule_reveal_opacity();
         self.finalize_show();
     }
@@ -237,15 +235,6 @@ impl PromptlyWebviewApp {
             return;
         }
         self.notify_frontend_show();
-        // WM activation from a global hotkey can complete after the first focus attempt.
-        let _ = self.webview.evaluate_script(
-            "setTimeout(function(){ \
-               window.__promptlyFocusSearch && window.__promptlyFocusSearch(); \
-             }, 0); \
-             setTimeout(function(){ \
-               window.__promptlyFocusSearch && window.__promptlyFocusSearch(); \
-             }, 75);",
-        );
     }
 
     fn focus_webview(&self) {
@@ -256,8 +245,7 @@ impl PromptlyWebviewApp {
 
     fn notify_frontend_show(&self) {
         let _ = self.webview.evaluate_script(
-            "window.__promptlyOnShow && window.__promptlyOnShow(); \
-             window.__promptlyFocusSearch && window.__promptlyFocusSearch();",
+            "window.__promptlyOnShow && window.__promptlyOnShow();",
         );
     }
 

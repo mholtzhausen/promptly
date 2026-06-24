@@ -21,3 +21,6 @@ Thumbs.db
 
 # Handover notes and scratch files
 /tmp/
+
+# TypeScript incremental build info
+*.tsbuildinfo

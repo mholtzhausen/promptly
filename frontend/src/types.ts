@@ -25,10 +25,6 @@ export interface DeletePromptPayload {
   name: string;
 }
 
-export interface TemplatePayload {
-  content: string;
-}
-
 export interface VariableValue {
   name: string;
   value: string;
@@ -48,12 +44,6 @@ export interface CopyPromptPayload {
   values: VariableValue[];
   messageKind: CopyMessageKind;
   skipHistory?: boolean;
-}
-
-export interface CopyPromptResult {
-  copied: boolean;
-  historyInserted: boolean;
-  historyCount: number;
 }
 
 export interface HistoryListItem {
@@ -93,12 +83,6 @@ export interface PruneHistoryPayload {
 export interface SavePromptResult {
   saved: boolean;
   prompt: Prompt | null;
-}
-
-export interface IpcRequest {
-  id: string;
-  command: string;
-  payload?: unknown;
 }
 
 export type IpcResponse<T> =

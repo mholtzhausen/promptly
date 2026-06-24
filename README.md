@@ -1,48 +1,53 @@
 # Promptly
 
-A Rust + GTK4 system-tray application that manages prompt templates with variable placeholders.
+A Linux desktop system-tray application that manages prompt templates with variable placeholders. The UI is a React app embedded in a native webview (Tao/Wry).
 
 ## Features
 
-- **System Tray Icon**: Lives in your system tray using the freedesktop/KDE StatusNotifierItem protocol via `ksni`.
-:- **Global Hotkey**: Press `Ctrl+Alt+Space` from anywhere to trigger the prompt selector popup. On X11 uses `XGrabKey` directly; on Wayland falls back to `rdev` evdev.
-- **Fuzzy Search**: Filter your stored templates quickly by typing.
-- **Variable Interpolation**: Templates with placeholders like `{{name|type|default|description}}` open a centered, always-on-top input dialog.
-- **Type-Aware Inputs**: Automatically generates GTK fields (Text Entry, SpinButton for numbers, ComboBoxText for options, TextView for multiline text).
-- **Editable Final Prompt**: Review and adjust the interpolated prompt in a fixed-height multiline editor before copying.
-- **Clipboard Integration**: Copies the final edited prompt to the clipboard.
-- **Prompt Metadata and Actions**: Store a title, description, and template content; edit or delete templates from the popup with confirmation.
-- **Add Prompts UI**: Add new prompt templates directly from the app interface using the `+` button in the popup.
-:- **Auto-background**: Launches silently in the background — the terminal returns to the shell immediately.
-- **Cross-Platform/DE Compatibility**: Designed to work on X11 and Wayland (reads inputs directly via `rdev` / `evdev`).
+- **System Tray Icon**: freedesktop StatusNotifierItem via `ksni`.
+- **Global Hotkey**: `Ctrl+Alt+Space` toggles the prompt window. X11 uses `XGrabKey`; Wayland falls back to `rdev`.
+- **Fuzzy Search**: Filter templates by name, description, or content (client-side).
+- **Variable Interpolation**: Templates with `{{name|type|default|description}}` open a type-aware input screen.
+- **Type-Aware Inputs**: Text, number, option (dropdown), and multiline fields.
+- **Live Preview**: Interpolated prompt updates as you fill variables; editable before copy.
+- **Clipboard Integration**: Copies the final prompt; desktop notifications on success.
+- **Copy History**: Deduplicated history of copied prompts with search, edit, and prune.
+- **Prompt CRUD**: Create, edit, and delete templates from the UI.
+- **Window Config**: Window size persisted in `~/.config/promptly/config.yml`.
+- **Auto-background**: Daemonizes on launch unless `PROMPTLY_FOREGROUND=1`.
 
 ## Requirements
 
 - Rust (2021 edition)
-- GTK4 library and development headers
-- SQLite3
-- `libxdo` library (for rdev evdev fallback on Wayland)
+- Node.js ^20.19 or >=22.12
+- WebKitGTK (via Wry on Linux; `libwebkit2gtk-4.1-dev` and GTK4 dev packages)
+- SQLite3 (bundled via `rusqlite`)
 
 ## How to Run
 
-Use the Makefile from the project root:
+From the project root:
 
 ```bash
 make run
 ```
 
-Useful targets:
+This builds the frontend (`npm ci` + `vite build`), then compiles the Rust binary, and launches it.
+
+Other targets:
 
 ```bash
-make build
-make test
-make install     # install to /usr/local/bin
+make build            # release build
+make frontend-build   # frontend only
+make test             # frontend build + cargo test
+make install          # install to /usr/local/bin
 make clean
 ```
 
-The launcher and Makefile automatically prepare the local `libxdo` linker symlink when the system has `libxdo.so.3` but not the development `libxdo.so` symlink.
+Or use `./run.sh` (equivalent to `make run`).
 
-## Database Location
+## Data Locations
 
-Prompts are stored in an SQLite database at:
-`~/.config/promptly/prompts.db`
+| Path | Purpose |
+|---|---|
+| `~/.config/promptly/prompts.db` | SQLite prompts + copy history |
+| `~/.config/promptly/config.yml` | Window size preferences |

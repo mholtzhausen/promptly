@@ -1,6 +1,5 @@
-import type { IpcResponse } from "./types";
+import type { IpcResponse } from "../types";
 
-// Wry exposes window.ipc.postMessage to send JSON to the Rust host.
 declare global {
   interface Window {
     ipc: { postMessage(message: string): void };
@@ -18,22 +17,18 @@ interface PendingRequest {
 const pending = new Map<string, PendingRequest>();
 let requestCounter = 0;
 
-/** WebKitGTK loads `with_html` at null origin — not always a secure context for `crypto.randomUUID`. */
 function newRequestId(): string {
   if (globalThis.crypto?.randomUUID) {
     try {
       return globalThis.crypto.randomUUID();
     } catch {
-      // fall through to deterministic fallback
+      // fall through
     }
   }
   requestCounter += 1;
   return `promptly-${Date.now()}-${requestCounter}`;
 }
 
-/**
- * Called by Rust after script evaluation: resolves the matching pending request.
- */
 window.__promptlyReceive = (response: IpcResponse<unknown>) => {
   const entry = pending.get(response.id);
   if (!entry) return;
@@ -45,9 +40,6 @@ window.__promptlyReceive = (response: IpcResponse<unknown>) => {
   }
 };
 
-/**
- * Send an IPC command to the Rust backend and return the typed response.
- */
 export function request<T>(command: string, payload?: unknown): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const id = newRequestId();

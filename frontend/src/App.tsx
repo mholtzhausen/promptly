@@ -1,151 +1,41 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { request } from "./ipc";
-import type {
-  Prompt,
-  VariableDto,
-  SavePromptResult,
-  SavePromptPayload,
-  DeletePromptPayload,
-  InterpolatePayload,
-  CopyPromptPayload,
-  VariableValue,
-  HistoryListItem,
-  HistoryListResult,
-  HistoryEntry,
-  HistoryIdPayload,
-  UpdateHistoryEntryPayload,
-  PruneHistoryPayload,
-} from "./types";
+import { api, copyPromptToClipboard } from "./api/commands";
+import { useHostBridge } from "./bridge/host";
+import { DeleteView } from "./components/DeleteView";
+import { EditorView } from "./components/EditorView";
+import { HistoryDetailView } from "./components/HistoryDetailView";
+import { HistoryView } from "./components/HistoryView";
+import { ListView } from "./components/ListView";
+import { VariablesView } from "./components/VariablesView";
+import { useInterpolatePreview } from "./hooks/useInterpolatePreview";
+import {
+  useAggressiveFocus,
+  usePrintableKeyToInput,
+  useScrollSelectedIntoView,
+  useSelectedIndexBounds,
+} from "./hooks/useListKeyboard";
+import { useHistory } from "./hooks/useHistory";
+import { usePrompts } from "./hooks/usePrompts";
+import { filterHistory, filterPrompts } from "./lib/fuzzy";
+import type { View } from "./lib/view";
+import { windowTitleForView } from "./lib/view";
+import type { HistoryEntry, HistoryListItem, Prompt, VariableDto, VariableValue } from "./types";
 import "./styles.css";
-
-/** Fuzzy subsequence match — ported from src/popup.rs:389-401. */
-function fuzzyMatch(text: string, pattern: string): boolean {
-  const tl = text.toLowerCase();
-  const pl = pattern.toLowerCase();
-  let ti = 0;
-  for (let pi = 0; pi < pl.length; pi++) {
-    const idx = tl.indexOf(pl[pi], ti);
-    if (idx === -1) return false;
-    ti = idx + 1;
-  }
-  return true;
-}
-
-/** Filter prompts by fuzzy match, ordered: name → description → content. */
-function filterPrompts(prompts: Prompt[], query: string): Prompt[] {
-  const q = query.trim();
-  if (!q) return prompts;
-
-  const nameMatches: Prompt[] = [];
-  const descMatches: Prompt[] = [];
-  const contentMatches: Prompt[] = [];
-
-  for (const p of prompts) {
-    if (fuzzyMatch(p.name, q)) {
-      nameMatches.push(p);
-    } else if (fuzzyMatch(p.description, q)) {
-      descMatches.push(p);
-    } else if (fuzzyMatch(p.content, q)) {
-      contentMatches.push(p);
-    }
-  }
-
-  return [...nameMatches, ...descMatches, ...contentMatches];
-}
-
-function filterHistory(entries: HistoryListItem[], query: string): HistoryListItem[] {
-  const q = query.trim();
-  if (!q) return entries;
-  return entries.filter((e) => fuzzyMatch(e.title, q));
-}
-
-/** Parse stored title `[Name](var1:val1, …)` for display. */
-function parseHistoryTitle(title: string): { name: string; vars: string | null } {
-  const match = /^\[([^\]]*)\]\((.*)\)$/.exec(title);
-  if (!match) return { name: title, vars: null };
-  const name = match[1];
-  const vars = match[2];
-  return { name, vars: vars ? vars : null };
-}
-
-function HistoryTitleText({ title }: { title: string }) {
-  const { name, vars } = parseHistoryTitle(title);
-  return (
-    <span className="history-title">
-      <span className="history-title-name">{name}</span>
-      {vars !== null && (
-        <span className="history-title-vars"> ({vars})</span>
-      )}
-    </span>
-  );
-}
-
-const PRUNE_KEEP_OPTIONS = [10, 100, 500, 1000] as const;
-
-const TITLE_PREFIX = "Promptly | ";
-
-type View =
-  | "list"
-  | "editor"
-  | "delete"
-  | "variables"
-  | "history"
-  | "historyDetail";
-
-function windowTitleForView(
-  view: View,
-  ctx: {
-    editingPrompt: Prompt | null;
-    variablePrompt: Prompt | null;
-    deletingPrompt: Prompt | null;
-    historyDetail: HistoryEntry | null;
-  },
-): string {
-  switch (view) {
-    case "list":
-      return `${TITLE_PREFIX}Find a prompt`;
-    case "editor":
-      return ctx.editingPrompt
-        ? `${TITLE_PREFIX}Edit ${ctx.editingPrompt.name}`
-        : `${TITLE_PREFIX}New prompt template`;
-    case "variables":
-      return ctx.variablePrompt
-        ? `${TITLE_PREFIX}Fill out ${ctx.variablePrompt.name}`
-        : `${TITLE_PREFIX}Find a prompt`;
-    case "history":
-      return `${TITLE_PREFIX}Copy history`;
-    case "historyDetail":
-      return ctx.historyDetail
-        ? `${TITLE_PREFIX}View ${ctx.historyDetail.promptName}`
-        : `${TITLE_PREFIX}Copy history`;
-    case "delete":
-      return ctx.deletingPrompt
-        ? `${TITLE_PREFIX}Delete ${ctx.deletingPrompt.name}`
-        : `${TITLE_PREFIX}Find a prompt`;
-  }
-}
 
 export default function App() {
   const [view, setView] = useState<View>("list");
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  // Editor state
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
-
-  // Delete confirmation state
   const [deletingPrompt, setDeletingPrompt] = useState<Prompt | null>(null);
+  const [editorError, setEditorError] = useState<string | null>(null);
 
-  // Variables state
   const [variablePrompt, setVariablePrompt] = useState<Prompt | null>(null);
   const [variables, setVariables] = useState<VariableDto[]>([]);
   const [variableValues, setVariableValues] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState("");
 
-  // History state
-  const [historyEntries, setHistoryEntries] = useState<HistoryListItem[]>([]);
-  const [historyTotalCount, setHistoryTotalCount] = useState(0);
   const [historyQuery, setHistoryQuery] = useState("");
   const [historySelectedIndex, setHistorySelectedIndex] = useState(0);
   const [historyDetail, setHistoryDetail] = useState<HistoryEntry | null>(null);
@@ -158,49 +48,40 @@ export default function App() {
   const listRef = useRef<HTMLDivElement>(null);
   const historyListRef = useRef<HTMLDivElement>(null);
   const editorFormRef = useRef<HTMLFormElement>(null);
-  const [editorError, setEditorError] = useState<string | null>(null);
 
-  const focusSearch = useCallback(() => {
-    const attempt = () => searchRef.current?.focus({ preventScroll: true });
-    attempt();
-    requestAnimationFrame(attempt);
-    window.setTimeout(attempt, 0);
-    window.setTimeout(attempt, 50);
-  }, []);
+  const focusSearch = useAggressiveFocus(searchRef);
+  const focusHistorySearch = useAggressiveFocus(historySearchRef);
 
-  const focusHistorySearch = useCallback(() => {
-    const attempt = () =>
-      historySearchRef.current?.focus({ preventScroll: true });
-    attempt();
-    requestAnimationFrame(attempt);
-    window.setTimeout(attempt, 0);
-    window.setTimeout(attempt, 50);
-  }, []);
+  const {
+    prompts,
+    loadPrompts,
+    patchPrompt,
+    savePrompt,
+    deletePrompt,
+  } = usePrompts();
 
-  window.__promptlyFocusSearch = focusSearch;
+  const {
+    historyEntries,
+    historyTotalCount,
+    loadHistory,
+    deleteHistoryItem,
+    pruneHistoryKeep,
+    getHistoryEntry,
+    updateHistoryContent,
+  } = useHistory();
 
-  // ── Load prompts (called on mount and on show) ──────────────────────
-  const loadPrompts = useCallback(async () => {
-    try {
-      const list = await request<Prompt[]>("listPrompts");
-      setPrompts(list);
-    } catch {
-      // silently ignore
-    }
-  }, []);
-
-  // Called by Rust when the window becomes visible.
-  window.__promptlyOnShow = useCallback(() => {
+  const onShow = useCallback(() => {
     setView("list");
     setQuery("");
     setSelectedIndex(0);
-    loadPrompts();
+    void loadPrompts();
     focusSearch();
   }, [loadPrompts, focusSearch]);
 
-  // Initial load
+  useHostBridge({ onShow, focusSearch });
+
   useEffect(() => {
-    loadPrompts();
+    void loadPrompts();
   }, [loadPrompts]);
 
   useEffect(() => {
@@ -210,22 +91,20 @@ export default function App() {
       deletingPrompt,
       historyDetail,
     });
-    request("setWindowTitle", { title }).catch(() => {});
+    void api.setWindowTitle(title).catch(() => {});
   }, [view, editingPrompt, variablePrompt, deletingPrompt, historyDetail]);
 
-  // Ctrl+Escape quits the application from any view.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || !e.ctrlKey || e.metaKey || e.altKey) return;
       e.preventDefault();
       e.stopPropagation();
-      request("quit");
+      void api.quit();
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
   }, []);
 
-  // Keep the filter input focused whenever the list view is active.
   useEffect(() => {
     if (view !== "list") return;
     focusSearch();
@@ -233,39 +112,16 @@ export default function App() {
     return () => window.removeEventListener("focus", focusSearch);
   }, [view, focusSearch]);
 
-  // Route printable keys to the filter when focus is elsewhere in the list view.
-  useEffect(() => {
-    if (view !== "list") return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.target === searchRef.current) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key.length !== 1) return;
-      e.preventDefault();
-      searchRef.current?.focus();
-      setQuery((prev) => prev + e.key);
-      setSelectedIndex(0);
-    };
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [view]);
+  usePrintableKeyToInput(view === "list", searchRef, (key) => {
+    setQuery((prev) => prev + key);
+    setSelectedIndex(0);
+  });
 
-  // Route printable keys to the history filter when focus is elsewhere.
-  useEffect(() => {
-    if (view !== "history") return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.target === historySearchRef.current) return;
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key.length !== 1) return;
-      e.preventDefault();
-      historySearchRef.current?.focus();
-      setHistoryQuery((prev) => prev + e.key);
-      setHistorySelectedIndex(0);
-    };
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [view]);
+  usePrintableKeyToInput(view === "history", historySearchRef, (key) => {
+    setHistoryQuery((prev) => prev + key);
+    setHistorySelectedIndex(0);
+  });
 
-  // Keep the history filter focused whenever the history view is active.
   useEffect(() => {
     if (view !== "history") return;
     focusHistorySearch();
@@ -273,7 +129,6 @@ export default function App() {
     return () => window.removeEventListener("focus", focusHistorySearch);
   }, [view, focusHistorySearch]);
 
-  // Close the prune menu when clicking outside.
   useEffect(() => {
     if (!pruneMenuOpen) return;
     const onMouseDown = (e: MouseEvent) => {
@@ -288,45 +143,22 @@ export default function App() {
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, [pruneMenuOpen]);
 
-  // ── Filtered list ──────────────────────────────────────────────────
   const filtered = filterPrompts(prompts, query);
   const filteredHistory = filterHistory(historyEntries, historyQuery);
 
-  // Ensure selectedIndex stays in bounds when the filter changes.
-  useEffect(() => {
-    if (filtered.length === 0) {
-      setSelectedIndex(0);
-    } else if (selectedIndex >= filtered.length) {
-      setSelectedIndex(filtered.length - 1);
-    }
-  }, [filtered.length, selectedIndex]);
+  useSelectedIndexBounds(filtered.length, selectedIndex, setSelectedIndex);
+  useScrollSelectedIntoView(view === "list", listRef, selectedIndex);
 
-  // Scroll the highlighted row into view.
-  useEffect(() => {
-    if (view !== "list" || !listRef.current) return;
-    const row = listRef.current.children[selectedIndex] as
-      | HTMLElement
-      | undefined;
-    row?.scrollIntoView({ block: "nearest" });
-  }, [selectedIndex, filtered, view]);
-
-  // Ensure historySelectedIndex stays in bounds when the filter changes.
-  useEffect(() => {
-    if (filteredHistory.length === 0) {
-      setHistorySelectedIndex(0);
-    } else if (historySelectedIndex >= filteredHistory.length) {
-      setHistorySelectedIndex(filteredHistory.length - 1);
-    }
-  }, [filteredHistory.length, historySelectedIndex]);
-
-  // Scroll the highlighted history row into view.
-  useEffect(() => {
-    if (view !== "history" || !historyListRef.current) return;
-    const row = historyListRef.current.children[historySelectedIndex] as
-      | HTMLElement
-      | undefined;
-    row?.scrollIntoView({ block: "nearest" });
-  }, [historySelectedIndex, filteredHistory, view]);
+  useSelectedIndexBounds(
+    filteredHistory.length,
+    historySelectedIndex,
+    setHistorySelectedIndex,
+  );
+  useScrollSelectedIntoView(
+    view === "history",
+    historyListRef,
+    historySelectedIndex,
+  );
 
   const buildCopyValues = useCallback((): VariableValue[] => {
     return variables.map((v) => ({
@@ -335,12 +167,9 @@ export default function App() {
     }));
   }, [variables, variableValues]);
 
-  // ── Prompt selection (copy or show variables) ──────────────────────
   const selectPrompt = useCallback(async (prompt: Prompt) => {
     try {
-      const vars = await request<VariableDto[]>("variablesForTemplate", {
-        content: prompt.content,
-      } as never);
+      const vars = await api.variablesForTemplate(prompt.content);
       setVariablePrompt(prompt);
       setVariables(vars);
       const values: Record<string, string> = {};
@@ -348,26 +177,30 @@ export default function App() {
         values[v.name] = v.defaultValue;
       }
       setVariableValues(values);
-      const interp = await request<string>("interpolate", {
+      const interp = await api.interpolate({
         template: prompt.content,
         values: vars.map((v) => ({ name: v.name, value: values[v.name] })),
-      } as InterpolatePayload);
+      });
       setPreview(interp);
       setView("variables");
     } catch {
-      // silently ignore
+      // silent
     }
   }, []);
 
-  // ── List keyboard navigation ──────────────────────────────────────
+  const openEdit = useCallback((p: Prompt) => {
+    setEditingPrompt(p);
+    setEditorError(null);
+    setView("editor");
+  }, []);
+
   const handleListKey = useCallback(
     (e: React.KeyboardEvent) => {
       if (view !== "list") return;
-
       switch (e.key) {
         case "Escape":
           e.preventDefault();
-          request("hideWindow");
+          void api.hideWindow();
           break;
         case "ArrowDown": {
           e.preventDefault();
@@ -378,8 +211,7 @@ export default function App() {
         case "ArrowUp": {
           e.preventDefault();
           const max = filtered.length;
-          if (max > 0)
-            setSelectedIndex((prev) => (prev + max - 1) % max);
+          if (max > 0) setSelectedIndex((prev) => (prev + max - 1) % max);
           break;
         }
         case "Enter": {
@@ -389,25 +221,14 @@ export default function App() {
           if (e.ctrlKey || e.metaKey) {
             openEdit(prompt);
           } else {
-            selectPrompt(prompt);
+            void selectPrompt(prompt);
           }
           break;
         }
       }
     },
-    [view, filtered, selectedIndex, selectPrompt],
+    [view, filtered, selectedIndex, selectPrompt, openEdit],
   );
-
-  // ── History ───────────────────────────────────────────────────────
-  const loadHistory = useCallback(async () => {
-    try {
-      const result = await request<HistoryListResult>("listHistory");
-      setHistoryEntries(result.entries);
-      setHistoryTotalCount(result.totalCount);
-    } catch {
-      // silently ignore
-    }
-  }, []);
 
   const openHistory = useCallback(async () => {
     await loadHistory();
@@ -423,19 +244,20 @@ export default function App() {
     focusSearch();
   }, [focusSearch]);
 
-  const openHistoryDetail = useCallback(async (item: HistoryListItem) => {
-    try {
-      const entry = await request<HistoryEntry | null>("getHistoryEntry", {
-        id: item.id,
-      } as HistoryIdPayload);
-      if (!entry) return;
-      setHistoryDetail(entry);
-      setHistoryDetailContent(entry.content);
-      setView("historyDetail");
-    } catch {
-      // silently ignore
-    }
-  }, []);
+  const openHistoryDetail = useCallback(
+    async (item: HistoryListItem) => {
+      try {
+        const entry = await getHistoryEntry(item.id);
+        if (!entry) return;
+        setHistoryDetail(entry);
+        setHistoryDetailContent(entry.content);
+        setView("historyDetail");
+      } catch {
+        // silent
+      }
+    },
+    [getHistoryEntry],
+  );
 
   const closeHistoryDetail = useCallback(() => {
     setHistoryDetail(null);
@@ -444,37 +266,9 @@ export default function App() {
     focusHistorySearch();
   }, [focusHistorySearch]);
 
-  const deleteHistoryItem = useCallback(
-    async (id: number, e?: React.MouseEvent) => {
-      e?.stopPropagation();
-      try {
-        await request("deleteHistoryEntry", { id } as HistoryIdPayload);
-        await loadHistory();
-      } catch {
-        // silent
-      }
-    },
-    [loadHistory],
-  );
-
-  const pruneHistoryKeep = useCallback(
-    async (keep: number) => {
-      setPruneMenuOpen(false);
-      try {
-        await request("pruneHistory", { keep } as PruneHistoryPayload);
-        await loadHistory();
-        setHistorySelectedIndex(0);
-      } catch {
-        // silent
-      }
-    },
-    [loadHistory],
-  );
-
   const handleHistoryKey = useCallback(
     (e: React.KeyboardEvent) => {
       if (view !== "history") return;
-
       switch (e.key) {
         case "Escape":
           e.preventDefault();
@@ -497,7 +291,7 @@ export default function App() {
         case "Enter": {
           e.preventDefault();
           const entry = filteredHistory[historySelectedIndex];
-          if (entry) openHistoryDetail(entry);
+          if (entry) void openHistoryDetail(entry);
           break;
         }
       }
@@ -511,36 +305,11 @@ export default function App() {
     ],
   );
 
-  async function copyPrompt(
-    text: string,
-    promptName: string,
-    messageKind: "noVariables" | "variables",
-    promptId: number | null,
-    values: VariableValue[],
-    skipHistory = false,
-  ) {
-    await request("copyPrompt", {
-      text,
-      promptName,
-      promptId,
-      values,
-      messageKind,
-      skipHistory,
-    } as CopyPromptPayload);
-  }
-
-  // ── Editor ─────────────────────────────────────────────────────────
-  function openNew() {
+  const openNew = useCallback(() => {
     setEditingPrompt(null);
     setEditorError(null);
     setView("editor");
-  }
-
-  function openEdit(p: Prompt) {
-    setEditingPrompt(p);
-    setEditorError(null);
-    setView("editor");
-  }
+  }, []);
 
   const closeEditor = useCallback(() => {
     setView("list");
@@ -549,7 +318,7 @@ export default function App() {
     focusSearch();
   }, [focusSearch]);
 
-  async function handleSave() {
+  const handleSave = useCallback(async () => {
     const form = editorFormRef.current;
     if (!form) return;
 
@@ -565,12 +334,14 @@ export default function App() {
       return;
     }
 
-    const payload: SavePromptPayload = { id, name, description, content };
     try {
-      const result = await request<SavePromptResult>("savePrompt", payload);
+      const result = await savePrompt({ id, name, description, content });
       if (!result?.saved) {
         setEditorError("Could not save — check that all fields are filled in.");
         return;
+      }
+      if (result.prompt) {
+        patchPrompt(result.prompt);
       }
     } catch (err) {
       const msg =
@@ -581,104 +352,90 @@ export default function App() {
       return;
     }
 
-    try {
-      await loadPrompts();
-    } catch {
-      // Save succeeded; reload failure is non-fatal.
-    }
     setView("list");
     setEditingPrompt(null);
     setEditorError(null);
-  }
+  }, [editingPrompt, savePrompt, patchPrompt]);
 
-  // ── Delete confirmation ────────────────────────────────────────────
-  function openDelete(p: Prompt) {
+  const openDelete = useCallback((p: Prompt) => {
     setDeletingPrompt(p);
     setView("delete");
-  }
+  }, []);
 
-  function closeDelete() {
+  const closeDelete = useCallback(() => {
     setView("list");
     setDeletingPrompt(null);
-  }
+  }, []);
 
-  async function confirmDelete() {
+  const confirmDelete = useCallback(async () => {
     if (!deletingPrompt) return;
-    const payload: DeletePromptPayload = {
-      id: deletingPrompt.id,
-      name: deletingPrompt.name,
-    };
     try {
-      await request("deletePrompt", payload);
-      await loadPrompts();
+      await deletePrompt(deletingPrompt.id, deletingPrompt.name);
     } catch {
       // silent
     }
     setView("list");
     setDeletingPrompt(null);
-  }
+  }, [deletingPrompt, deletePrompt]);
 
-  // ── Variables ─────────────────────────────────────────────────────
-  async function onVariableChange() {
-    if (!variablePrompt) return;
-    try {
-      const interp = await request<string>("interpolate", {
-        template: variablePrompt.content,
-        values: Object.entries(variableValues).map(([name, value]) => ({
-          name,
-          value,
-        })),
-      } as InterpolatePayload);
-      setPreview(interp);
-    } catch {
-      // silent
-    }
-  }
+  const handleVariableInput = useCallback((name: string, value: string) => {
+    setVariableValues((prev) => ({ ...prev, [name]: value }));
+  }, []);
 
-  const handleVariableInput = useCallback(
-    (name: string, value: string) => {
-      setVariableValues((prev) => ({ ...prev, [name]: value }));
-    },
-    [],
-  );
+  useInterpolatePreview(variablePrompt?.content, variableValues, setPreview);
 
-  // Recompute preview when variableValues change.
-  useEffect(() => {
-    onVariableChange();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variableValues]);
-
-  const cancelVariables = useCallback(() => {
-    setView("list");
+  const resetVariables = useCallback(() => {
     setVariablePrompt(null);
     setVariables([]);
     setVariableValues({});
     setPreview("");
+  }, []);
+
+  const cancelVariables = useCallback(() => {
+    setView("list");
+    resetVariables();
     focusSearch();
-  }, [focusSearch]);
+  }, [resetVariables, focusSearch]);
+
+  const copyVariablesAction = useCallback(
+    async (afterCopy: () => void | Promise<void>) => {
+      if (!variablePrompt) return;
+      try {
+        await copyPromptToClipboard({
+          text: preview,
+          promptName: variablePrompt.name,
+          messageKind: variables.length === 0 ? "noVariables" : "variables",
+          promptId: variablePrompt.id,
+          values: buildCopyValues(),
+        });
+        await afterCopy();
+      } catch {
+        // silent
+      }
+    },
+    [variablePrompt, preview, variables.length, buildCopyValues],
+  );
 
   const copyAndBackToList = useCallback(async () => {
-    if (!variablePrompt) return;
-    try {
-      await copyPrompt(
-        preview,
-        variablePrompt.name,
-        variables.length === 0 ? "noVariables" : "variables",
-        variablePrompt.id,
-        buildCopyValues(),
-      );
+    await copyVariablesAction(() => {
       setView("list");
-      setVariablePrompt(null);
-      setVariables([]);
-      setVariableValues({});
-      setPreview("");
+      resetVariables();
       focusSearch();
-    } catch {
-      // silent
-    }
-  }, [variablePrompt, preview, variables, buildCopyValues, focusSearch]);
+    });
+  }, [copyVariablesAction, resetVariables, focusSearch]);
 
-  // Escape from editor, fill, or history panes.
+  const copyVariables = useCallback(async () => {
+    await copyVariablesAction(() => {});
+  }, [copyVariablesAction]);
+
+  const copyAndCloseVariables = useCallback(async () => {
+    await copyVariablesAction(async () => {
+      setView("list");
+      resetVariables();
+      await api.hideWindow();
+    });
+  }, [copyVariablesAction, resetVariables]);
+
   useEffect(() => {
     if (
       view !== "editor" &&
@@ -693,7 +450,7 @@ export default function App() {
       e.preventDefault();
       e.stopPropagation();
       if (view === "editor") closeEditor();
-      else if (view === "variables") copyAndBackToList();
+      else if (view === "variables") void copyAndBackToList();
       else if (view === "history") closeHistory();
       else closeHistoryDetail();
     };
@@ -707,478 +464,130 @@ export default function App() {
     closeHistoryDetail,
   ]);
 
-  async function copyVariables() {
-    if (!variablePrompt) return;
-    try {
-      await copyPrompt(
-        preview,
-        variablePrompt.name,
-        variables.length === 0 ? "noVariables" : "variables",
-        variablePrompt.id,
-        buildCopyValues(),
-      );
-    } catch {
-      // silent
-    }
-  }
-
-  async function copyAndCloseVariables() {
-    if (!variablePrompt) return;
-    try {
-      await copyPrompt(
-        preview,
-        variablePrompt.name,
-        variables.length === 0 ? "noVariables" : "variables",
-        variablePrompt.id,
-        buildCopyValues(),
-      );
-      setView("list");
-      setVariablePrompt(null);
-      setVariables([]);
-      setVariableValues({});
-      setPreview("");
-      await request("hideWindow");
-    } catch {
-      // silent
-    }
-  }
-
-  async function copyHistoryDetail() {
+  const copyHistoryDetail = useCallback(async () => {
     if (!historyDetail) return;
     const edited = historyDetailContent !== historyDetail.content;
     try {
-      await copyPrompt(
-        historyDetailContent,
-        historyDetail.promptName,
-        historyDetail.variables.length === 0 ? "noVariables" : "variables",
-        historyDetail.promptId,
-        historyDetail.variables,
-        true,
-      );
+      await copyPromptToClipboard({
+        text: historyDetailContent,
+        promptName: historyDetail.promptName,
+        messageKind:
+          historyDetail.variables.length === 0 ? "noVariables" : "variables",
+        promptId: historyDetail.promptId,
+        values: historyDetail.variables,
+        skipHistory: true,
+      });
       if (edited) {
-        await request("updateHistoryEntry", {
-          id: historyDetail.id,
-          content: historyDetailContent,
-        } as UpdateHistoryEntryPayload);
+        await updateHistoryContent(historyDetail.id, historyDetailContent);
         setHistoryDetail({ ...historyDetail, content: historyDetailContent });
       }
     } catch {
       // silent
     }
-  }
+  }, [historyDetail, historyDetailContent, updateHistoryContent]);
 
-  // ── Render ─────────────────────────────────────────────────────────
+  const handlePruneKeep = useCallback(
+    async (keep: number) => {
+      setPruneMenuOpen(false);
+      try {
+        await pruneHistoryKeep(keep);
+        setHistorySelectedIndex(0);
+      } catch {
+        // silent
+      }
+    },
+    [pruneHistoryKeep],
+  );
 
   if (view === "editor") {
-    const p = editingPrompt;
     return (
-      <div className="app editor-view">
-        <h1 className="editor-header panel-header">
-          {p ? "Edit Prompt Template" : "New Prompt Template"}
-        </h1>
-        <div className="editor-body">
-          <form ref={editorFormRef} noValidate>
-            <label>
-              Prompt Name
-              <input
-                name="name"
-                type="text"
-                defaultValue={p?.name ?? ""}
-                placeholder="e.g. git-commit"
-              />
-            </label>
-            <label>
-              Description
-              <input
-                name="description"
-                type="text"
-                defaultValue={p?.description ?? ""}
-                placeholder="Short summary shown next to the title"
-              />
-            </label>
-            <label className="template-content-field">
-              Template Content
-              <textarea
-                name="content"
-                className="mono"
-                defaultValue={p?.content ?? ""}
-              />
-            </label>
-          </form>
-        </div>
-        <div className="editor-footer panel-footer">
-          <p className="help">
-            Use {"{{name|type|default|desc}}"} placeholders. Types: text,
-            number, option, multiline.
-          </p>
-          {editorError && <p className="form-error">{editorError}</p>}
-          <div className="buttons">
-            <button type="button" onClick={closeEditor}>
-              Cancel
-            </button>
-            <button type="button" className="primary" onClick={handleSave}>
-              {p ? "Update" : "Save"}
-            </button>
-          </div>
-        </div>
-      </div>
+      <EditorView
+        editingPrompt={editingPrompt}
+        editorFormRef={editorFormRef}
+        editorError={editorError}
+        onClose={closeEditor}
+        onSave={() => void handleSave()}
+      />
     );
   }
 
   if (view === "delete" && deletingPrompt) {
     return (
-      <div
-        className="app"
-        onKeyDown={(e) => e.key === "Escape" && closeDelete()}
-      >
-        <h1>Delete Prompt Template</h1>
-        <p className="confirm-msg">
-          Delete &lsquo;{deletingPrompt.name}&rsquo;? This cannot be undone.
-        </p>
-        <div className="buttons">
-          <button type="button" onClick={closeDelete}>
-            Cancel
-          </button>
-          <button type="button" className="danger" onClick={confirmDelete}>
-            Delete
-          </button>
-        </div>
-      </div>
+      <DeleteView
+        deletingPrompt={deletingPrompt}
+        onClose={closeDelete}
+        onConfirm={() => void confirmDelete()}
+      />
     );
   }
 
   if (view === "variables" && variablePrompt) {
     return (
-      <div className="app variables-view">
-        <h1 className="variables-header panel-header">
-          Fill in variables for &lsquo;{variablePrompt.name}&rsquo;
-        </h1>
-        <div className="variables-body">
-          {variables.map((v) => (
-            <label key={v.name} className="variable-field">
-              <span className="var-name">{v.name}</span>
-              {v.description && (
-                <span className="var-desc">{v.description}</span>
-              )}
-              {v.kind === "text" && (
-                <input
-                  type="text"
-                  defaultValue={v.defaultValue}
-                  onChange={(e) => handleVariableInput(v.name, e.target.value)}
-                />
-              )}
-              {v.kind === "number" && (
-                <input
-                  type="number"
-                  defaultValue={
-                    v.defaultValue ? parseFloat(v.defaultValue) || 0 : 0
-                  }
-                  onChange={(e) => handleVariableInput(v.name, e.target.value)}
-                />
-              )}
-              {v.kind === "option" && (
-                <select
-                  defaultValue={v.options[0] ?? ""}
-                  onChange={(e) => handleVariableInput(v.name, e.target.value)}
-                >
-                  {v.options.map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {v.kind === "multiline" && (
-                <textarea
-                  className="mono multiline"
-                  defaultValue={v.defaultValue}
-                  onChange={(e) => handleVariableInput(v.name, e.target.value)}
-                />
-              )}
-            </label>
-          ))}
-          <label className="preview-field">
-            Prompt to copy
-            <textarea
-              className="mono multiline preview"
-              value={preview}
-              onChange={(e) => setPreview(e.target.value)}
-            />
-          </label>
-        </div>
-        <div className="variables-footer panel-footer">
-          <div className="buttons">
-            <button type="button" onClick={cancelVariables}>
-              Cancel
-            </button>
-            <button type="button" onClick={copyVariables}>
-              Copy
-            </button>
-            <button
-              type="button"
-              className="primary"
-              onClick={copyAndCloseVariables}
-            >
-              Copy &amp; Close
-            </button>
-          </div>
-        </div>
-      </div>
+      <VariablesView
+        variablePrompt={variablePrompt}
+        variables={variables}
+        preview={preview}
+        setPreview={setPreview}
+        onVariableInput={handleVariableInput}
+        onCancel={cancelVariables}
+        onCopy={() => void copyVariables()}
+        onCopyAndClose={() => void copyAndCloseVariables()}
+      />
     );
   }
 
   if (view === "historyDetail" && historyDetail) {
     return (
-      <div className="app history-detail-view">
-        <h1 className="history-detail-header panel-header">
-          <HistoryTitleText title={historyDetail.title} />
-        </h1>
-        <div className="history-detail-body">
-          {historyDetail.variables.length > 0 && (
-            <div className="history-variables">
-              <table className="history-variables-table">
-                <thead>
-                  <tr>
-                    <th>Variable</th>
-                    <th>Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {historyDetail.variables.map((v) => (
-                    <tr key={v.name}>
-                      <td className="history-var-name">{v.name}</td>
-                      <td className="history-var-value mono">{v.value}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <label className="preview-field history-content-field">
-            Resulting prompt
-            <textarea
-              className="mono multiline preview"
-              value={historyDetailContent}
-              onChange={(e) => setHistoryDetailContent(e.target.value)}
-            />
-          </label>
-        </div>
-        <div className="history-detail-footer panel-footer">
-          <div className="buttons">
-            <button type="button" onClick={closeHistoryDetail}>
-              Close
-            </button>
-            <button
-              type="button"
-              className="primary"
-              onClick={copyHistoryDetail}
-            >
-              Copy
-            </button>
-          </div>
-        </div>
-      </div>
+      <HistoryDetailView
+        historyDetail={historyDetail}
+        historyDetailContent={historyDetailContent}
+        setHistoryDetailContent={setHistoryDetailContent}
+        onClose={closeHistoryDetail}
+        onCopy={() => void copyHistoryDetail()}
+      />
     );
   }
 
   if (view === "history") {
-    const showPruneWarning = historyTotalCount >= 1000;
     return (
-      <div className="app history-view" onKeyDown={handleHistoryKey}>
-        <div id="history-top-bar" className="panel-header">
-          <input
-            id="history-search-entry"
-            ref={historySearchRef}
-            type="search"
-            placeholder="Filter history..."
-            value={historyQuery}
-            onChange={(e) => {
-              setHistoryQuery(e.target.value);
-              setHistorySelectedIndex(0);
-            }}
-            onInput={(e) => {
-              setHistoryQuery(e.currentTarget.value);
-              setHistorySelectedIndex(0);
-            }}
-            onBlur={(e) => {
-              const next = e.relatedTarget as HTMLElement | null;
-              if (
-                next?.closest(".action-btn") ||
-                next?.closest(".history-prune-wrap")
-              ) {
-                return;
-              }
-              focusHistorySearch();
-            }}
-          />
-        </div>
-        <div id="history-list" ref={historyListRef}>
-          {filteredHistory.map((entry, i) => (
-            <div
-              key={entry.id}
-              className={
-                "history-row" + (i === historySelectedIndex ? " selected" : "")
-              }
-              onClick={() => {
-                setHistorySelectedIndex(i);
-                focusHistorySearch();
-                openHistoryDetail(entry);
-              }}
-            >
-              <HistoryTitleText title={entry.title} />
-              <div className="prompt-actions">
-                <button
-                  className="action-btn"
-                  title="Delete history entry"
-                  onClick={(e) => deleteHistoryItem(entry.id, e)}
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div id="history-status-label" className="panel-footer history-footer">
-          {showPruneWarning && (
-            <p className="history-warning">
-              1000+ entries — consider pruning.
-            </p>
-          )}
-          <div className="history-footer-row">
-            <span className="history-status-text">
-              {historyTotalCount === 0
-                ? "No history yet. Copy a prompt to record it."
-                : historyQuery && filteredHistory.length === 0
-                  ? `No matches for "${historyQuery}"`
-                  : `${filteredHistory.length} entr${filteredHistory.length !== 1 ? "ies" : "y"} shown`}
-            </span>
-            {historyTotalCount > 0 && (
-              <div className="history-prune-wrap" ref={pruneMenuRef}>
-                {pruneMenuOpen && (
-                  <div className="history-prune-menu" role="menu">
-                    {PRUNE_KEEP_OPTIONS.map((keep) => (
-                      <button
-                        key={keep}
-                        type="button"
-                        role="menuitem"
-                        onClick={() => pruneHistoryKeep(keep)}
-                      >
-                        Keep last {keep}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <button
-                  id="history-prune-button"
-                  type="button"
-                  aria-expanded={pruneMenuOpen}
-                  aria-haspopup="menu"
-                  onClick={() => setPruneMenuOpen((open) => !open)}
-                >
-                  Prune
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <HistoryView
+        historyQuery={historyQuery}
+        setHistoryQuery={setHistoryQuery}
+        setHistorySelectedIndex={setHistorySelectedIndex}
+        historySearchRef={historySearchRef}
+        historyListRef={historyListRef}
+        pruneMenuRef={pruneMenuRef}
+        filteredHistory={filteredHistory}
+        historyTotalCount={historyTotalCount}
+        historySelectedIndex={historySelectedIndex}
+        pruneMenuOpen={pruneMenuOpen}
+        setPruneMenuOpen={setPruneMenuOpen}
+        focusHistorySearch={focusHistorySearch}
+        onKeyDown={handleHistoryKey}
+        onOpenDetail={(entry) => void openHistoryDetail(entry)}
+        onDeleteItem={(id, e) => void deleteHistoryItem(id)}
+        onPruneKeep={(keep) => void handlePruneKeep(keep)}
+      />
     );
   }
 
-  // Default: list view
   return (
-    <div className="app list-view" onKeyDown={handleListKey}>
-      <div id="top-bar" className="panel-header">
-        <input
-          id="search-entry"
-          ref={searchRef}
-          type="search"
-          placeholder="Filter prompts..."
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setSelectedIndex(0);
-          }}
-          onInput={(e) => {
-            setQuery(e.currentTarget.value);
-            setSelectedIndex(0);
-          }}
-          onBlur={(e) => {
-            const next = e.relatedTarget as HTMLElement | null;
-            if (
-              next?.closest("#add-button") ||
-              next?.closest("#history-button") ||
-              next?.closest(".action-btn")
-            ) {
-              return;
-            }
-            focusSearch();
-          }}
-        />
-        <button
-          id="history-button"
-          title="Copy history"
-          onClick={openHistory}
-        >
-          ⟳
-        </button>
-        <button id="add-button" title="Add prompt" onClick={openNew}>
-          +
-        </button>
-      </div>
-      <div id="prompt-list" ref={listRef}>
-        {filtered.map((p, i) => (
-          <div
-            key={p.id}
-            className={
-              "prompt-row" + (i === selectedIndex ? " selected" : "")
-            }
-            onClick={(e) => {
-              setSelectedIndex(i);
-              focusSearch();
-              if (e.ctrlKey || e.metaKey) {
-                openEdit(p);
-              } else {
-                selectPrompt(p);
-              }
-            }}
-          >
-            <div className="prompt-text">
-              <span className="prompt-title">{p.name}</span>
-              <span className="prompt-description">{p.description}</span>
-            </div>
-            <div className="prompt-actions">
-              <button
-                className="action-btn"
-                title="Edit prompt"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openEdit(p);
-                }}
-              >
-                ✎
-              </button>
-              <button
-                className="action-btn"
-                title="Delete prompt"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openDelete(p);
-                }}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div id="status-label" className="panel-footer">
-        {prompts.length === 0
-          ? "No prompts yet. Click + to add one."
-          : query && filtered.length === 0
-            ? `No matches for "${query}"`
-            : `${filtered.length} prompt${filtered.length !== 1 ? "s" : ""} available`}
-      </div>
-    </div>
+    <ListView
+      query={query}
+      setQuery={setQuery}
+      setSelectedIndex={setSelectedIndex}
+      searchRef={searchRef}
+      listRef={listRef}
+      filtered={filtered}
+      prompts={prompts}
+      selectedIndex={selectedIndex}
+      focusSearch={focusSearch}
+      onKeyDown={handleListKey}
+      onOpenHistory={() => void openHistory()}
+      onOpenNew={openNew}
+      onSelectPrompt={(p) => void selectPrompt(p)}
+      onEditPrompt={openEdit}
+      onDeletePrompt={openDelete}
+    />
   );
 }

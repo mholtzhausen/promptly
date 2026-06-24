@@ -22,17 +22,6 @@ pub enum VarType {
     Multiline,
 }
 
-impl std::fmt::Display for VarType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            VarType::Text => write!(f, "text"),
-            VarType::Number => write!(f, "number"),
-            VarType::Option(_) => write!(f, "option"),
-            VarType::Multiline => write!(f, "multiline"),
-        }
-    }
-}
-
 /// Regex for `{{name|type|default|description}}`.
 static PLACEHOLDER_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
     Regex::new(r"\{\{(\w+)\|(\w+)(?:\|([^|]*))?(?:\|([^}]*))?}}").unwrap()
