@@ -1,8 +1,10 @@
 //! Tao/Wry application shell: owns the native window, webview, IPC backend,
 //! and tray handle, and drives the event loop.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
+
+use crate::config::AppConfig;
 
 use tao::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use tao::event::{Event, StartCause, WindowEvent};
@@ -33,6 +35,7 @@ pub struct PromptlyWebviewApp {
     focus_pending: Cell<bool>,
     /// True until the frontend on-show hook has run for this show cycle.
     on_show_pending: Cell<bool>,
+    app_config: RefCell<AppConfig>,
 }
 
 impl PromptlyWebviewApp {
@@ -43,6 +46,10 @@ impl PromptlyWebviewApp {
         tray: TrayState,
         db_path: PathBuf,
     ) -> anyhow::Result<Self> {
+        let app_config = AppConfig::load();
+        let window_size = app_config.window_size();
+        let initial_size = LogicalSize::new(window_size.width, window_size.height);
+
         // Build window. On Linux, prevent Tao's default GtkBox so Wry's
         // build_gtk can add the WebKitWebView directly.
         #[cfg(target_os = "linux")]
@@ -50,7 +57,7 @@ impl PromptlyWebviewApp {
             use tao::platform::unix::WindowBuilderExtUnix;
             WindowBuilder::new()
                 .with_title("Prompt Manager")
-                .with_inner_size(LogicalSize::new(500.0, 400.0))
+                .with_inner_size(initial_size)
                 .with_visible(false)
                 .with_decorations(true)
                 .with_always_on_top(true)
@@ -60,7 +67,7 @@ impl PromptlyWebviewApp {
         #[cfg(not(target_os = "linux"))]
         let window = WindowBuilder::new()
             .with_title("Prompt Manager")
-            .with_inner_size(LogicalSize::new(500.0, 400.0))
+            .with_inner_size(initial_size)
             .with_visible(false)
             .with_decorations(true)
             .with_always_on_top(true)
@@ -91,6 +98,7 @@ impl PromptlyWebviewApp {
             _tray: tray,
             focus_pending: Cell::new(false),
             on_show_pending: Cell::new(false),
+            app_config: RefCell::new(app_config),
         })
     }
 
@@ -121,6 +129,11 @@ impl PromptlyWebviewApp {
                     event: WindowEvent::CloseRequested,
                     ..
                 } => state.window.set_visible(false),
+                Event::WindowEvent {
+                    event: WindowEvent::Resized(_),
+                    window_id,
+                    ..
+                } if window_id == state.window.id() => state.on_window_resized(),
                 _ => {}
             }
         });
@@ -135,9 +148,9 @@ impl PromptlyWebviewApp {
     }
 
     fn show_window(&self) {
-        // Inner size 500x400 (logical), centered on the current/primary monitor.
+        let window_size = self.app_config.borrow().window_size();
         self.window
-            .set_inner_size(LogicalSize::new(500.0, 400.0));
+            .set_inner_size(LogicalSize::new(window_size.width, window_size.height));
 
         if let Some(monitor) = self
             .window
@@ -145,8 +158,8 @@ impl PromptlyWebviewApp {
             .or_else(|| self.window.primary_monitor())
         {
             let scale = self.window.scale_factor();
-            let win_w = 500.0 * scale;
-            let win_h = 400.0 * scale;
+            let win_w = window_size.width * scale;
+            let win_h = window_size.height * scale;
             let PhysicalPosition { x: mx, y: my } = monitor.position();
             let PhysicalSize { width: mw, height: mh } = monitor.size();
             let cx = mx + ((mw as f64 - win_w) / 2.0).round() as i32;
@@ -162,6 +175,18 @@ impl PromptlyWebviewApp {
         window_focus::present_and_activate(&self.window);
         self.focus_webview();
         self.finalize_show();
+    }
+
+    fn on_window_resized(&self) {
+        let physical = self.window.inner_size();
+        let scale = self.window.scale_factor();
+        let width = physical.width as f64 / scale;
+        let height = physical.height as f64 / scale;
+        let mut config = self.app_config.borrow_mut();
+        config.set_window_size(width, height);
+        if let Err(e) = config.save() {
+            log::warn!("Failed to save window size to config: {e}");
+        }
     }
 
     fn on_window_focused(&self) {
