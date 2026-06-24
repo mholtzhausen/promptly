@@ -24,6 +24,28 @@ function fuzzyMatch(text: string, pattern: string): boolean {
   return true;
 }
 
+/** Filter prompts by fuzzy match, ordered: name → description → content. */
+function filterPrompts(prompts: Prompt[], query: string): Prompt[] {
+  const q = query.trim();
+  if (!q) return prompts;
+
+  const nameMatches: Prompt[] = [];
+  const descMatches: Prompt[] = [];
+  const contentMatches: Prompt[] = [];
+
+  for (const p of prompts) {
+    if (fuzzyMatch(p.name, q)) {
+      nameMatches.push(p);
+    } else if (fuzzyMatch(p.description, q)) {
+      descMatches.push(p);
+    } else if (fuzzyMatch(p.content, q)) {
+      contentMatches.push(p);
+    }
+  }
+
+  return [...nameMatches, ...descMatches, ...contentMatches];
+}
+
 type View = "list" | "editor" | "delete" | "variables";
 
 export default function App() {
@@ -50,8 +72,14 @@ export default function App() {
   const [editorError, setEditorError] = useState<string | null>(null);
 
   const focusSearch = useCallback(() => {
-    requestAnimationFrame(() => searchRef.current?.focus());
+    const attempt = () => searchRef.current?.focus({ preventScroll: true });
+    attempt();
+    requestAnimationFrame(attempt);
+    window.setTimeout(attempt, 0);
+    window.setTimeout(attempt, 50);
   }, []);
+
+  window.__promptlyFocusSearch = focusSearch;
 
   // ── Load prompts (called on mount and on show) ──────────────────────
   const loadPrompts = useCallback(async () => {
@@ -102,14 +130,7 @@ export default function App() {
   }, [view]);
 
   // ── Filtered list ──────────────────────────────────────────────────
-  const filtered = query.trim()
-    ? prompts.filter(
-        (p) =>
-          fuzzyMatch(p.name, query) ||
-          fuzzyMatch(p.description, query) ||
-          fuzzyMatch(p.content, query),
-      )
-    : prompts;
+  const filtered = filterPrompts(prompts, query);
 
   // Ensure selectedIndex stays in bounds when the filter changes.
   useEffect(() => {
@@ -527,7 +548,6 @@ export default function App() {
             setQuery(e.currentTarget.value);
             setSelectedIndex(0);
           }}
-          onKeyDown={handleListKey}
           onBlur={(e) => {
             const next = e.relatedTarget as HTMLElement | null;
             if (next?.closest("#add-button") || next?.closest(".action-btn")) {

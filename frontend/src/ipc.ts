@@ -6,6 +6,7 @@ declare global {
     ipc: { postMessage(message: string): void };
     __promptlyReceive: (response: IpcResponse<unknown>) => void;
     __promptlyOnShow: () => void;
+    __promptlyFocusSearch: () => void;
   }
 }
 

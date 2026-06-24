@@ -1,6 +1,7 @@
 //! Tao/Wry application shell: owns the native window, webview, IPC backend,
 //! and tray handle, and drives the event loop.
 
+use std::cell::Cell;
 use std::path::PathBuf;
 
 use tao::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
@@ -11,6 +12,7 @@ use wry::WebViewBuilder;
 
 use crate::ipc::{IpcBackend, RealDesktopEffects};
 use crate::tray::TrayState;
+use crate::window_focus;
 
 /// User events delivered to the Tao event loop.
 #[derive(Debug, Clone)]
@@ -27,6 +29,10 @@ pub struct PromptlyWebviewApp {
     webview: wry::WebView,
     backend: IpcBackend,
     _tray: TrayState,
+    /// True while waiting for the window to gain focus after show.
+    focus_pending: Cell<bool>,
+    /// True until the frontend on-show hook has run for this show cycle.
+    on_show_pending: Cell<bool>,
 }
 
 impl PromptlyWebviewApp {
@@ -83,6 +89,8 @@ impl PromptlyWebviewApp {
             webview,
             backend: IpcBackend::new(db_path),
             _tray: tray,
+            focus_pending: Cell::new(false),
+            on_show_pending: Cell::new(false),
         })
     }
 
@@ -93,6 +101,11 @@ impl PromptlyWebviewApp {
             match event {
                 Event::UserEvent(AppEvent::ToggleWindow) => state.toggle_window(),
                 Event::UserEvent(AppEvent::Ipc(raw)) => state.handle_ipc(&raw),
+                Event::WindowEvent {
+                    event: WindowEvent::Focused(true),
+                    window_id,
+                    ..
+                } if window_id == state.window.id() => state.on_window_focused(),
                 Event::WindowEvent {
                     event: WindowEvent::CloseRequested,
                     ..
@@ -131,13 +144,49 @@ impl PromptlyWebviewApp {
                 .set_outer_position(PhysicalPosition::new(cx, cy));
         }
 
+        self.focus_pending.set(true);
+        self.on_show_pending.set(true);
         self.window.set_always_on_top(true);
         self.window.set_visible(true);
-        self.window.set_focus();
+        window_focus::present_and_activate(&self.window);
+        self.focus_webview();
+        self.finalize_show();
+    }
+
+    fn on_window_focused(&self) {
+        if self.focus_pending.take() {
+            self.focus_webview();
+        }
+        self.finalize_show();
+    }
+
+    fn finalize_show(&self) {
+        if !self.on_show_pending.take() {
+            return;
+        }
+        self.notify_frontend_show();
+        // WM activation from a global hotkey can complete after the first focus attempt.
+        let _ = self.webview.evaluate_script(
+            "setTimeout(function(){ \
+               window.__promptlyFocusSearch && window.__promptlyFocusSearch(); \
+             }, 0); \
+             setTimeout(function(){ \
+               window.__promptlyFocusSearch && window.__promptlyFocusSearch(); \
+             }, 75);",
+        );
+    }
+
+    fn focus_webview(&self) {
+        let _ = self.webview.focus_parent();
         let _ = self.webview.focus();
-        let _ = self
-            .webview
-            .evaluate_script("window.__promptlyOnShow && window.__promptlyOnShow();");
+        self.window.set_focus();
+    }
+
+    fn notify_frontend_show(&self) {
+        let _ = self.webview.evaluate_script(
+            "window.__promptlyOnShow && window.__promptlyOnShow(); \
+             window.__promptlyFocusSearch && window.__promptlyFocusSearch();",
+        );
     }
 
     fn handle_ipc(&self, raw: &str) {

@@ -9,6 +9,7 @@ mod ipc;
 mod prompt_parser;
 mod tray;
 mod webview_app;
+mod window_focus;
 
 use anyhow::Result;
 use std::sync::{Arc, Mutex};
