@@ -474,6 +474,7 @@ export default function App() {
       switch (e.key) {
         case "Escape":
           e.preventDefault();
+          e.stopPropagation();
           closeHistory();
           break;
         case "ArrowDown": {
@@ -684,6 +685,7 @@ export default function App() {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.ctrlKey) return;
       e.preventDefault();
+      e.stopPropagation();
       if (view === "editor") closeEditor();
       else if (view === "variables") copyAndBackToList();
       else if (view === "history") closeHistory();
