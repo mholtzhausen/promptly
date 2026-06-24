@@ -1066,10 +1066,14 @@ export default function App() {
             className={
               "prompt-row" + (i === selectedIndex ? " selected" : "")
             }
-            onClick={() => {
+            onClick={(e) => {
               setSelectedIndex(i);
               focusSearch();
-              selectPrompt(p);
+              if (e.ctrlKey || e.metaKey) {
+                openEdit(p);
+              } else {
+                selectPrompt(p);
+              }
             }}
           >
             <div className="prompt-text">
