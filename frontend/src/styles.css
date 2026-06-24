@@ -253,10 +253,8 @@ h1 {
   margin: 8px 0 12px;
 }
 
-.editor-header,
-.variables-header,
-.history-detail-header {
-  margin: 0;
+h1.panel-header {
+  margin: calc(-1 * var(--pane-padding)) calc(-1 * var(--pane-padding)) 0;
 }
 
 .editor-body {
