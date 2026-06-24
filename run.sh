@@ -14,5 +14,10 @@ npm --prefix "$DIR/frontend" run build
 echo "Building promptly in release mode..."
 cargo build --release
 
+if pgrep -x promptly > /dev/null 2>&1; then
+    echo "Stopping existing promptly instance..."
+    pkill promptly
+fi
+
 echo "Running promptly..."
 exec "$DIR/target/release/promptly" --show

@@ -12,6 +12,10 @@ build: frontend-build
 	cargo build --release
 
 run: build
+	@if pgrep -x promptly > /dev/null 2>&1; then \
+		echo "Stopping existing promptly instance..."; \
+		pkill promptly; \
+	fi; \
 	./target/release/promptly --show
 
 test: frontend-build
