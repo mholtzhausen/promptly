@@ -168,26 +168,19 @@ export default function App() {
       const vars = await request<VariableDto[]>("variablesForTemplate", {
         content: prompt.content,
       } as never);
-      if (vars.length === 0) {
-        // Copy immediately.
-        await copyPrompt(prompt.content, prompt.name, "noVariables");
-        request("hideWindow");
-      } else {
-        setVariablePrompt(prompt);
-        setVariables(vars);
-        const values: Record<string, string> = {};
-        for (const v of vars) {
-          values[v.name] = v.defaultValue;
-        }
-        setVariableValues(values);
-        // Compute initial preview.
-        const interp = await request<string>("interpolate", {
-          template: prompt.content,
-          values: vars.map((v) => ({ name: v.name, value: values[v.name] })),
-        } as InterpolatePayload);
-        setPreview(interp);
-        setView("variables");
+      setVariablePrompt(prompt);
+      setVariables(vars);
+      const values: Record<string, string> = {};
+      for (const v of vars) {
+        values[v.name] = v.defaultValue;
       }
+      setVariableValues(values);
+      const interp = await request<string>("interpolate", {
+        template: prompt.content,
+        values: vars.map((v) => ({ name: v.name, value: values[v.name] })),
+      } as InterpolatePayload);
+      setPreview(interp);
+      setView("variables");
     } catch {
       // silently ignore
     }
@@ -372,6 +365,25 @@ export default function App() {
     focusSearch();
   }, [focusSearch]);
 
+  const copyAndBackToList = useCallback(async () => {
+    if (!variablePrompt) return;
+    try {
+      await copyPrompt(
+        preview,
+        variablePrompt.name,
+        variables.length === 0 ? "noVariables" : "variables",
+      );
+      setView("list");
+      setVariablePrompt(null);
+      setVariables([]);
+      setVariableValues({});
+      setPreview("");
+      focusSearch();
+    } catch {
+      // silent
+    }
+  }, [variablePrompt, preview, variables, focusSearch]);
+
   // Escape from editor or fill panes returns to the filter list (not hide window).
   useEffect(() => {
     if (view !== "editor" && view !== "variables") return;
@@ -379,18 +391,39 @@ export default function App() {
       if (e.key !== "Escape") return;
       e.preventDefault();
       if (view === "editor") closeEditor();
-      else cancelVariables();
+      else copyAndBackToList();
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [view, closeEditor, cancelVariables]);
+  }, [view, closeEditor, copyAndBackToList]);
+
+  async function copyVariables() {
+    if (!variablePrompt) return;
+    try {
+      await copyPrompt(
+        preview,
+        variablePrompt.name,
+        variables.length === 0 ? "noVariables" : "variables",
+      );
+    } catch {
+      // silent
+    }
+  }
 
   async function copyAndCloseVariables() {
     if (!variablePrompt) return;
     try {
-      await copyPrompt(preview, variablePrompt.name, "variables");
+      await copyPrompt(
+        preview,
+        variablePrompt.name,
+        variables.length === 0 ? "noVariables" : "variables",
+      );
       setView("list");
       setVariablePrompt(null);
+      setVariables([]);
+      setVariableValues({});
+      setPreview("");
+      await request("hideWindow");
     } catch {
       // silent
     }
@@ -539,6 +572,9 @@ export default function App() {
           <div className="buttons">
             <button type="button" onClick={cancelVariables}>
               Cancel
+            </button>
+            <button type="button" onClick={copyVariables}>
+              Copy
             </button>
             <button
               type="button"
