@@ -37,8 +37,22 @@ jobs:
       - name: Build
         run: make build
 
-      - name: Upload release asset
+      - name: Package Linux x86_64 release assets
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp target/release/promptly dist/promptly-x86_64-linux
+          chmod 755 dist/promptly-x86_64-linux
+          (
+            cd dist
+            sha256sum promptly-x86_64-linux > promptly-x86_64-linux.sha256
+          )
+
+      - name: Upload release assets
         uses: softprops/action-gh-release@v3
         with:
-          files: target/release/promptly
+          files: |
+            dist/promptly-x86_64-linux
+            dist/promptly-x86_64-linux.sha256
+            scripts/install.sh
           generate_release_notes: true
