@@ -89,7 +89,7 @@ pub fn init_db(db_path: &Path) -> Result<Connection> {
     Ok(conn)
 }
 
-const CURRENT_SCHEMA_VERSION: i64 = 1;
+const CURRENT_SCHEMA_VERSION: i64 = 2;
 
 fn run_migrations(conn: &Connection) -> Result<()> {
     let version: i64 = conn
@@ -108,12 +108,40 @@ fn run_migrations(conn: &Connection) -> Result<()> {
         )?;
     }
 
+    if version < 2 {
+        migrate_legacy_prompt_placeholders(conn)?;
+        conn.execute(
+            "INSERT INTO schema_version (version) VALUES (?1)",
+            params![2],
+        )?;
+    }
+
     if version > CURRENT_SCHEMA_VERSION {
         log::warn!(
             "Database schema version {version} is newer than supported {CURRENT_SCHEMA_VERSION}"
         );
     }
 
+    Ok(())
+}
+
+fn migrate_legacy_prompt_placeholders(conn: &Connection) -> Result<()> {
+    let mut stmt = conn.prepare("SELECT id, content FROM prompts")?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for (id, content) in rows {
+        let migrated = crate::prompt_parser::migrate_template_content(&content);
+        if migrated != content {
+            conn.execute(
+                "UPDATE prompts SET content = ?1 WHERE id = ?2",
+                params![migrated, id],
+            )?;
+            log::info!("Migrated prompt template id={id} from legacy placeholders");
+        }
+    }
     Ok(())
 }
 
@@ -428,6 +456,35 @@ mod tests {
         let prompts = load_prompts(&conn).unwrap();
         assert_eq!(prompts.len(), 1);
         assert_eq!(prompts[0].description, "");
+    }
+
+    #[test]
+    fn test_migrates_legacy_placeholders() {
+        let f = NamedTempFile::new().unwrap();
+        let conn = Connection::open(f.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER NOT NULL);
+             INSERT INTO schema_version (version) VALUES (1);
+             CREATE TABLE prompts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL
+             );
+             INSERT INTO prompts (name, description, content)
+             VALUES ('git', 'commit helper', 'fix: {{msg|text||commit message}}');",
+        )
+        .unwrap();
+        drop(conn);
+
+        let conn = init_db(f.path()).unwrap();
+        let prompts = load_prompts(&conn).unwrap();
+        assert_eq!(prompts.len(), 1);
+        assert!(prompts[0]
+            .content
+            .contains(r#"<var name="msg" type="text""#));
+        assert!(prompts[0].content.contains(r#"label="commit message""#));
+        assert!(!prompts[0].content.contains("{{"));
     }
 
     #[test]

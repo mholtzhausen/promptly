@@ -26,6 +26,11 @@ pub enum VarType {
 static VAR_TAG_RE: std::sync::LazyLock<Regex> =
     std::sync::LazyLock::new(|| Regex::new(r"<var\s+([^>]*?)\s*/>").unwrap());
 
+/// Legacy `{{name|type|default|description}}` placeholders (pre-v2 templates).
+static LEGACY_PLACEHOLDER_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(r"\{\{(\w+)\|(\w+)(?:\|([^|]*))?(?:\|([^}]*))?}}").unwrap()
+});
+
 /// Parse all variable placeholders from a template string.
 pub fn parse_variables(content: &str) -> Vec<Variable> {
     VAR_TAG_RE
@@ -197,8 +202,7 @@ fn escape_attr(s: &str) -> String {
         .replace('<', "&lt;")
 }
 
-/// Serialize a variable tag (stable attribute order). Used by tests and tooling.
-#[allow(dead_code)]
+/// Serialize a variable tag (stable attribute order).
 pub fn serialize_var(
     name: &str,
     type_str: &str,
@@ -224,6 +228,39 @@ pub fn serialize_var(
         parts.push(format!(r#"options="{}""#, escape_attr(options)));
     }
     format!("<var {} />", parts.join(" "))
+}
+
+/// Convert legacy `{{name|type|default|description}}` placeholders to `<var />` tags.
+pub fn migrate_template_content(content: &str) -> String {
+    if !content.contains("{{") {
+        return content.to_string();
+    }
+    LEGACY_PLACEHOLDER_RE
+        .replace_all(content, |caps: &regex::Captures| {
+            let name = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            let raw_type = caps.get(2).map(|m| m.as_str()).unwrap_or("text");
+            let default_val = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+            let description = caps.get(4).map(|m| m.as_str()).unwrap_or("");
+
+            let type_str = match raw_type {
+                "number" | "option" | "multiline" | "text" => raw_type,
+                _ => "text",
+            };
+
+            let (value, options) = if type_str == "option" {
+                let first = default_val
+                    .split(',')
+                    .map(str::trim)
+                    .find(|s| !s.is_empty())
+                    .unwrap_or("");
+                (first, default_val)
+            } else {
+                (default_val, "")
+            };
+
+            serialize_var(name, type_str, value, description, "", options)
+        })
+        .into_owned()
 }
 
 /// Interpolate a template with provided variable values.
@@ -392,5 +429,35 @@ mod tests {
         let vars = parse_variables(r#"<var name="my-var" type="text" />"#);
         assert_eq!(vars.len(), 1);
         assert_eq!(vars[0].name, "my-var");
+    }
+
+    #[test]
+    fn test_migrate_legacy_text_placeholder() {
+        let migrated = migrate_template_content("Hello {{name|text|world|your name}}");
+        assert_eq!(
+            migrated,
+            r#"Hello <var name="name" type="text" value="world" label="your name" />"#
+        );
+    }
+
+    #[test]
+    fn test_migrate_legacy_option_placeholder() {
+        let migrated = migrate_template_content("{{color|option|red,green,blue|pick one}}");
+        assert_eq!(
+            migrated,
+            r#"<var name="color" type="option" value="red" label="pick one" options="red,green,blue" />"#
+        );
+    }
+
+    #[test]
+    fn test_migrate_legacy_empty_optionals() {
+        let migrated = migrate_template_content("{{name|text||}}");
+        assert_eq!(migrated, r#"<var name="name" type="text" />"#);
+    }
+
+    #[test]
+    fn test_migrate_skips_already_new_format() {
+        let content = r#"Hi <var name="x" type="text" />"#;
+        assert_eq!(migrate_template_content(content), content);
     }
 }

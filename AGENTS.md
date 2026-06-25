@@ -49,7 +49,7 @@
 | `src/webview_app.rs` | Tao window + Wry webview + show/hide lifecycle |
 | `src/ipc/` | JSON IPC dispatch, prompts/history commands |
 | `src/db.rs` | SQLite prompts + copy history |
-| `src/prompt_parser.rs` | `{{var\|type\|default\|desc}}` parse + interpolate |
+| `src/prompt_parser.rs` | `<var />` parse + interpolate; legacy `{{...}}` migration |
 | `src/config.rs` | Paths, YAML window size config |
 | `src/window_focus.rs` | X11 centering, always-on-top, opacity |
 | `src/tray.rs` | ksni tray menu (Show / Quit) |
@@ -71,7 +71,7 @@ make uninstall        # remove user-local install
 
 CLI: `promptly --version`, `promptly export [path]`, `promptly import <path>`.
 Logs: `~/.local/state/promptly/promptly.log` when daemonized; `RUST_LOG=promptly=debug`.
-Single instance: flock on `~/.config/promptly-poc/promptly.lock` (POC branch).
+Single instance: flock on `~/.config/promptly/promptly.lock`.
 
 Convenience script: `./run.sh` (same as `make run`, bash-only).
 
@@ -104,7 +104,7 @@ Convenience script: `./run.sh` (same as `make run`, bash-only).
 - Fuzzy search is client-side only (`frontend/src/lib/fuzzy.ts`).
 - Typed IPC via `frontend/src/api/commands.ts`.
 
-### Template Syntax (POC branch)
+### Template Syntax
 ```xml
 <var name="variable_name" type="text" value="default" label="Field label" placeholder="hint" />
 <var name="color" type="option" options="red,green,blue" value="red" label="Pick one" />
@@ -113,7 +113,7 @@ Required attributes: `name`, `type`. Types: `text`, `number`, `option`, `multili
 
 Template editor: CodeMirror with inline variable chips; click chip to edit attributes via popover.
 
-POC data path: `~/.config/promptly-poc/` (DB, config, lock). Logs remain at `~/.local/state/promptly/`.
+Legacy `{{name|type|default|description}}` placeholders are migrated to `<var />` on database open (schema v2).
 
 ### History Title Format (Rust ↔ frontend contract)
 ```
