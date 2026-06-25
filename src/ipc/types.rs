@@ -35,6 +35,12 @@ pub struct SavePromptPayload {
     pub name: String,
     pub description: String,
     pub content: String,
+    #[serde(default = "default_prompt_category")]
+    pub category: String,
+}
+
+fn default_prompt_category() -> String {
+    crate::db::DEFAULT_PROMPT_CATEGORY.to_string()
 }
 
 #[derive(Debug, serde::Deserialize)]

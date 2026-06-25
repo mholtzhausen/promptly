@@ -22,6 +22,9 @@ import { useHistory } from "./hooks/useHistory";
 import { useNotifications } from "./hooks/useNotifications";
 import { usePrompts } from "./hooks/usePrompts";
 import { filterHistory, filterPrompts } from "./lib/fuzzy";
+import {
+  initialSelectedCategories,
+} from "./lib/categories";
 import type { View } from "./lib/view";
 import { windowTitleForView } from "./lib/view";
 import type { HistoryEntry, HistoryListItem, Prompt, VariableDto, VariableValue } from "./types";
@@ -47,6 +50,10 @@ export default function App() {
   const [historyDetail, setHistoryDetail] = useState<HistoryEntry | null>(null);
   const [historyDetailContent, setHistoryDetailContent] = useState("");
   const [pruneMenuOpen, setPruneMenuOpen] = useState(false);
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const [selectedCategories, setSelectedCategories] = useState(
+    initialSelectedCategories,
+  );
   const [statusError, setStatusError] = useState<string | null>(null);
   const [updateDialog, setUpdateDialog] = useState<UpdateDialogPayload | null>(null);
   const [updateInProgress, setUpdateInProgress] = useState(false);
@@ -62,6 +69,7 @@ export default function App() {
   const searchRef = useRef<HTMLInputElement>(null);
   const historySearchRef = useRef<HTMLInputElement>(null);
   const pruneMenuRef = useRef<HTMLDivElement>(null);
+  const categoryMenuRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const historyListRef = useRef<HTMLDivElement>(null);
   const editorFormRef = useRef<HTMLFormElement>(null);
@@ -200,7 +208,21 @@ export default function App() {
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, [pruneMenuOpen]);
 
-  const filtered = filterPrompts(prompts, query);
+  useEffect(() => {
+    if (!categoryMenuOpen) return;
+    const onMouseDown = (e: MouseEvent) => {
+      if (
+        categoryMenuRef.current &&
+        !categoryMenuRef.current.contains(e.target as Node)
+      ) {
+        setCategoryMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, [categoryMenuOpen]);
+
+  const filtered = filterPrompts(prompts, query, selectedCategories);
   const filteredHistory = filterHistory(historyEntries, historyQuery);
 
   useSelectedIndexBounds(filtered.length, selectedIndex, setSelectedIndex);
@@ -397,13 +419,15 @@ export default function App() {
     const description = ((data.get("description") as string) ?? "").trim();
     const content = editorContent;
 
+    const category = ((data.get("category") as string) ?? "general").trim() || "general";
+
     if (!name || !description || !content.trim()) {
       setEditorError("Name, description, and content are all required.");
       return;
     }
 
     try {
-      const result = await savePrompt({ id, name, description, content });
+      const result = await savePrompt({ id, name, description, content, category });
       if (!result?.saved) {
         setEditorError("Could not save — check that all fields are filled in.");
         return;
@@ -693,9 +717,14 @@ export default function App() {
       setSelectedIndex={setSelectedIndex}
       searchRef={searchRef}
       listRef={listRef}
+      categoryMenuRef={categoryMenuRef}
       filtered={filtered}
       prompts={prompts}
       selectedIndex={selectedIndex}
+      selectedCategories={selectedCategories}
+      setSelectedCategories={setSelectedCategories}
+      categoryMenuOpen={categoryMenuOpen}
+      setCategoryMenuOpen={setCategoryMenuOpen}
       focusSearch={focusSearch}
       onKeyDown={handleListKey}
       onOpenHistory={() => void openHistory()}

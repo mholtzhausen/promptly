@@ -29,8 +29,11 @@ impl IpcBackend {
         let name = p.name.trim().to_string();
         let description = p.description.trim().to_string();
         let content = p.content;
+        let category = super::limits::normalize_category(&p.category);
 
-        if let Err(msg) = super::limits::validate_prompt_fields(&name, &description, &content) {
+        if let Err(msg) =
+            super::limits::validate_prompt_fields(&name, &description, &content, &category)
+        {
             return (
                 super::response::err_json::<SavePromptResult>(id, msg),
                 false,
@@ -50,10 +53,17 @@ impl IpcBackend {
 
         let result = self.with_conn(|conn| {
             if let Some(existing_id) = p.id {
-                db::update_prompt(conn, existing_id, &name, &description, &content)?;
+                db::update_prompt(
+                    conn,
+                    existing_id,
+                    &name,
+                    &description,
+                    &content,
+                    &category,
+                )?;
                 Ok(existing_id)
             } else {
-                db::upsert_prompt(conn, &name, &description, &content)
+                db::upsert_prompt(conn, &name, &description, &content, &category)
             }
         });
 

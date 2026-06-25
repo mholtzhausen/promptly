@@ -10,12 +10,14 @@ fn prompt_roundtrip_matches_frontend_shape() {
         name: "git".to_string(),
         description: "commit helper".to_string(),
         content: r#"fix: <var name="msg" type="text" />"#.to_string(),
+        category: "development".to_string(),
     };
     let json = serde_json::to_value(&sample).unwrap();
     assert_eq!(json["id"], 1);
     assert_eq!(json["name"], "git");
     assert_eq!(json["description"], "commit helper");
     assert_eq!(json["content"], r#"fix: <var name="msg" type="text" />"#);
+    assert_eq!(json["category"], "development");
 }
 
 #[test]
@@ -95,6 +97,7 @@ fn ipc_request_deserializes_frontend_envelope() {
         super::types::IpcCommand::SavePrompt(p) => {
             assert_eq!(p.name, "n");
             assert!(p.id.is_none());
+            assert_eq!(p.category, "general");
         }
         _ => panic!("expected savePrompt"),
     }

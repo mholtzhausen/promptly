@@ -1,9 +1,10 @@
-//! CLI export/import without starting the GUI.
+//! CLI export/import and seeding without starting the GUI.
 
 use std::path::{Path, PathBuf};
 
 use crate::config;
-use crate::db;
+use crate::db::{self, normalize_category};
+use crate::seed;
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct ExportBundle {
@@ -11,7 +12,26 @@ pub struct ExportBundle {
     pub prompts: Vec<db::Prompt>,
 }
 
-const EXPORT_VERSION: u32 = 1;
+#[derive(Debug, serde::Deserialize)]
+struct ImportPrompt {
+    name: String,
+    description: String,
+    content: String,
+    #[serde(default = "default_import_category")]
+    category: String,
+}
+
+fn default_import_category() -> String {
+    db::DEFAULT_PROMPT_CATEGORY.to_string()
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ImportBundle {
+    version: u32,
+    prompts: Vec<ImportPrompt>,
+}
+
+const EXPORT_VERSION: u32 = 2;
 
 pub fn export_prompts(output: &Path) -> anyhow::Result<usize> {
     config::ensure_config_dir()?;
@@ -35,20 +55,33 @@ pub fn export_prompts(output: &Path) -> anyhow::Result<usize> {
 pub fn import_prompts(input: &Path) -> anyhow::Result<usize> {
     config::ensure_config_dir()?;
     let raw = std::fs::read_to_string(input)?;
-    let bundle: ExportBundle = serde_json::from_str(&raw)?;
-    if bundle.version != EXPORT_VERSION {
+    let bundle: ImportBundle = serde_json::from_str(&raw)?;
+    if bundle.version != 1 && bundle.version != EXPORT_VERSION {
         anyhow::bail!(
-            "Unsupported export version {} (expected {EXPORT_VERSION})",
+            "Unsupported export version {} (expected 1 or {EXPORT_VERSION})",
             bundle.version
         );
     }
     let conn = db::init_db(&config::db_path())?;
     let mut imported = 0usize;
     for prompt in bundle.prompts {
-        db::upsert_prompt(&conn, &prompt.name, &prompt.description, &prompt.content)?;
+        let category = normalize_category(&prompt.category);
+        db::upsert_prompt(
+            &conn,
+            &prompt.name,
+            &prompt.description,
+            &prompt.content,
+            &category,
+        )?;
         imported += 1;
     }
     Ok(imported)
+}
+
+pub fn seed_prompts() -> anyhow::Result<usize> {
+    config::ensure_config_dir()?;
+    let conn = db::init_db(&config::db_path())?;
+    seed::upsert_seed_prompts(&conn)
 }
 
 pub fn default_export_path() -> PathBuf {
@@ -58,10 +91,14 @@ pub fn default_export_path() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use tempfile::NamedTempFile;
+
+    static CLI_TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn export_import_roundtrip() {
+        let _guard = CLI_TEST_LOCK.lock().unwrap();
         let db_file = NamedTempFile::new().unwrap();
         std::env::set_var("PROMPTLY_DB_PATH", db_file.path());
 
@@ -71,6 +108,7 @@ mod tests {
             "demo",
             "desc",
             r#"content <var name="x" type="text" />"#,
+            "development",
         )
         .unwrap();
 
@@ -83,8 +121,42 @@ mod tests {
 
         let imported = import_prompts(&export_path).unwrap();
         assert_eq!(imported, 1);
+        let conn = db::init_db(db_file.path()).unwrap();
         let prompts = db::load_prompts(&conn).unwrap();
         assert_eq!(prompts[0].name, "demo");
+        assert_eq!(prompts[0].category, "development");
+
+        std::env::remove_var("PROMPTLY_DB_PATH");
+    }
+
+    #[test]
+    fn import_v1_defaults_category() {
+        let _guard = CLI_TEST_LOCK.lock().unwrap();
+        let db_file = NamedTempFile::new().unwrap();
+        std::env::set_var("PROMPTLY_DB_PATH", db_file.path());
+        db::init_db(db_file.path()).unwrap();
+
+        let import_path = db_file.path().with_extension("v1.json");
+        std::fs::write(
+            &import_path,
+            r#"{
+  "version": 1,
+  "prompts": [
+    {
+      "id": 1,
+      "name": "legacy",
+      "description": "old export",
+      "content": "body"
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+
+        import_prompts(&import_path).unwrap();
+        let conn = db::init_db(db_file.path()).unwrap();
+        let prompts = db::load_prompts(&conn).unwrap();
+        assert_eq!(prompts[0].category, "general");
 
         std::env::remove_var("PROMPTLY_DB_PATH");
     }

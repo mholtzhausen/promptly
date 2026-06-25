@@ -28,7 +28,22 @@ pub struct IpcBackend {
 
 impl IpcBackend {
     pub fn new(db_path: std::path::PathBuf) -> anyhow::Result<Self> {
+        Self::open(db_path, true)
+    }
+
+    #[cfg(test)]
+    pub fn new_for_test(db_path: std::path::PathBuf) -> anyhow::Result<Self> {
+        Self::open(db_path, false)
+    }
+
+    fn open(db_path: std::path::PathBuf, seed_if_empty: bool) -> anyhow::Result<Self> {
         let conn = db::init_db(&db_path)?;
+        if seed_if_empty && db::prompt_count(&conn)? == 0 {
+            match crate::seed::upsert_seed_prompts(&conn) {
+                Ok(count) => log::info!("Seeded {count} built-in prompt template(s)"),
+                Err(e) => log::error!("Failed to seed built-in prompts: {e}"),
+            }
+        }
         Ok(Self { conn })
     }
 

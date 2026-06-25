@@ -17,7 +17,7 @@ describe("api commands", () => {
     window.__promptlyReceive({
       id: msg.id,
       ok: true,
-      data: [{ id: 1, name: "a", description: "d", content: "c" }],
+      data: [{ id: 1, name: "a", description: "d", content: "c", category: "general" }],
     });
 
     const result = await promise;
@@ -30,6 +30,7 @@ describe("api commands", () => {
       name: "n",
       description: "d",
       content: "c",
+      category: "development",
     });
     const raw = (window.ipc.postMessage as ReturnType<typeof vi.fn>).mock
       .calls[0][0] as string;

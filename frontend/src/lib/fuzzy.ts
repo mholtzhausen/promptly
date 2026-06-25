@@ -1,4 +1,5 @@
 import type { Prompt } from "../types";
+import { categoryLabel } from "./categories";
 
 /** Fuzzy subsequence match — characters of pattern must appear in order in text. */
 export function fuzzyMatch(text: string, pattern: string): boolean {
@@ -13,26 +14,51 @@ export function fuzzyMatch(text: string, pattern: string): boolean {
   return true;
 }
 
-/** Filter prompts by fuzzy match, ordered: name → description → content. */
-export function filterPrompts(prompts: Prompt[], query: string): Prompt[] {
+/** Narrow prompts by selected category slugs. Empty selection yields none. */
+export function filterByCategories(
+  prompts: Prompt[],
+  selectedSlugs: Set<string>,
+): Prompt[] {
+  if (selectedSlugs.size === 0) return [];
+  return prompts.filter((p) => selectedSlugs.has(p.category));
+}
+
+/** Filter prompts by fuzzy match, ordered: name → description → category → content. */
+export function filterPrompts(
+  prompts: Prompt[],
+  query: string,
+  selectedCategories?: Set<string>,
+): Prompt[] {
+  const scoped = selectedCategories
+    ? filterByCategories(prompts, selectedCategories)
+    : prompts;
+
   const q = query.trim();
-  if (!q) return prompts;
+  if (!q) return scoped;
 
   const nameMatches: Prompt[] = [];
   const descMatches: Prompt[] = [];
+  const categoryMatches: Prompt[] = [];
   const contentMatches: Prompt[] = [];
 
-  for (const p of prompts) {
+  for (const p of scoped) {
     if (fuzzyMatch(p.name, q)) {
       nameMatches.push(p);
     } else if (fuzzyMatch(p.description, q)) {
       descMatches.push(p);
+    } else if (fuzzyMatch(categoryLabel(p.category), q)) {
+      categoryMatches.push(p);
     } else if (fuzzyMatch(p.content, q)) {
       contentMatches.push(p);
     }
   }
 
-  return [...nameMatches, ...descMatches, ...contentMatches];
+  return [
+    ...nameMatches,
+    ...descMatches,
+    ...categoryMatches,
+    ...contentMatches,
+  ];
 }
 
 export function filterHistory<T extends { title: string }>(

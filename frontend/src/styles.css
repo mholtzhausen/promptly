@@ -225,6 +225,159 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+
+.prompt-category {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.prompt-category--development {
+  color: #2f4f6d;
+  background-color: #dbe6f0;
+  border-color: #c5d5e4;
+}
+
+.prompt-category--agents {
+  color: #4a3f6b;
+  background-color: #e7e0f2;
+  border-color: #d4cae8;
+}
+
+.prompt-category--communication {
+  color: #5a4a2f;
+  background-color: #f0e8d8;
+  border-color: #e0d4c0;
+}
+
+.prompt-category--writing {
+  color: #3f5a4a;
+  background-color: #ddebe2;
+  border-color: #c8ddd0;
+}
+
+.prompt-category--image {
+  color: #6b3f5a;
+  background-color: #f1e0ea;
+  border-color: #e0c8d8;
+}
+
+.prompt-category--general {
+  color: #5a5a5a;
+  background-color: #eceae4;
+  border-color: #d8d4cc;
+}
+
+.category-filter-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+#categories-button {
+  background-color: #a3b9c9;
+  color: #1a1a1a;
+  border: none;
+  border-radius: 8px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 4px 10px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+#categories-button:hover,
+#categories-button.categories-button--active {
+  background-color: #8fa7b9;
+}
+
+.category-filter-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  background-color: #ffffff;
+  border: 1px solid var(--panel-chrome-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(28, 27, 24, 0.14);
+  min-width: 168px;
+  z-index: 20;
+  overflow: hidden;
+}
+
+.category-filter-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--panel-chrome-border);
+}
+
+.category-filter-actions button {
+  padding: 2px 0;
+  font-size: 11px;
+  color: #4a6785;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.category-filter-actions button:hover {
+  text-decoration: underline;
+}
+
+.category-filter-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.category-filter-row {
+  cursor: pointer;
+}
+
+.category-filter-row:hover {
+  background-color: #f0ede5;
+}
+
+.category-filter-table td {
+  padding: 5px 8px;
+  vertical-align: middle;
+  border: none;
+}
+
+.category-filter-check {
+  width: 1%;
+  padding-left: 10px;
+  white-space: nowrap;
+}
+
+.category-filter-check input {
+  margin: 0;
+  display: block;
+}
+
+.category-filter-label {
+  font-weight: 600;
+  color: #1c1b18;
+  white-space: nowrap;
+}
+
+.category-filter-count {
+  text-align: right;
+  color: #8a8478;
+  font-size: 11px;
+  font-weight: 400;
+  padding-right: 10px;
+  width: 1%;
+  white-space: nowrap;
 }
 
 /* ── Prompt action buttons (edit / delete) ──────────────────────────── */

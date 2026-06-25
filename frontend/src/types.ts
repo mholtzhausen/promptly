@@ -3,6 +3,7 @@ export interface Prompt {
   name: string;
   description: string;
   content: string;
+  category: string;
 }
 
 export interface VariableDto {
@@ -19,6 +20,7 @@ export interface SavePromptPayload {
   name: string;
   description: string;
   content: string;
+  category: string;
 }
 
 export interface DeletePromptPayload {

@@ -10,12 +10,39 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const TITLE_VALUE_MAX_LEN: usize = 40;
 
+pub const DEFAULT_PROMPT_CATEGORY: &str = "general";
+pub const MAX_PROMPT_CATEGORY_LEN: usize = 64;
+
+pub fn normalize_category(category: &str) -> String {
+    let trimmed = category.trim();
+    if trimmed.is_empty() {
+        DEFAULT_PROMPT_CATEGORY.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+pub fn validate_category(category: &str) -> Result<(), String> {
+    if category.len() > MAX_PROMPT_CATEGORY_LEN {
+        return Err(format!(
+            "Prompt category exceeds {MAX_PROMPT_CATEGORY_LEN} characters"
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Prompt {
     pub id: i64,
     pub name: String,
     pub description: String,
     pub content: String,
+    #[serde(default = "default_prompt_category")]
+    pub category: String,
+}
+
+fn default_prompt_category() -> String {
+    DEFAULT_PROMPT_CATEGORY.to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -89,7 +116,7 @@ pub fn init_db(db_path: &Path) -> Result<Connection> {
     Ok(conn)
 }
 
-const CURRENT_SCHEMA_VERSION: i64 = 2;
+const CURRENT_SCHEMA_VERSION: i64 = 3;
 
 fn run_migrations(conn: &Connection) -> Result<()> {
     let version: i64 = conn
@@ -113,6 +140,14 @@ fn run_migrations(conn: &Connection) -> Result<()> {
         conn.execute(
             "INSERT INTO schema_version (version) VALUES (?1)",
             params![2],
+        )?;
+    }
+
+    if version < 3 {
+        ensure_category_column(conn)?;
+        conn.execute(
+            "INSERT INTO schema_version (version) VALUES (?1)",
+            params![3],
         )?;
     }
 
@@ -145,6 +180,24 @@ fn migrate_legacy_prompt_placeholders(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn ensure_category_column(conn: &Connection) -> Result<()> {
+    let has_category = conn
+        .prepare("PRAGMA table_info(prompts)")?
+        .query_map(params![], |row| row.get::<_, String>(1))?
+        .collect::<std::result::Result<Vec<_>, _>>()?
+        .iter()
+        .any(|column| column == "category");
+
+    if !has_category {
+        conn.execute(
+            "ALTER TABLE prompts ADD COLUMN category TEXT NOT NULL DEFAULT 'general'",
+            params![],
+        )?;
+    }
+
+    Ok(())
+}
+
 fn ensure_description_column(conn: &Connection) -> Result<()> {
     let has_description = conn
         .prepare("PRAGMA table_info(prompts)")?
@@ -168,12 +221,13 @@ pub fn upsert_prompt(
     name: &str,
     description: &str,
     content: &str,
+    category: &str,
 ) -> Result<i64> {
     let id = conn.query_row(
-        "INSERT INTO prompts (name, description, content) VALUES (?1, ?2, ?3)
-         ON CONFLICT(name) DO UPDATE SET description=?2, content=?3
+        "INSERT INTO prompts (name, description, content, category) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(name) DO UPDATE SET description=?2, content=?3, category=?4
          RETURNING id",
-        params![name, description, content],
+        params![name, description, content, category],
         |row| row.get::<_, i64>(0),
     )?;
     Ok(id)
@@ -185,10 +239,11 @@ pub fn update_prompt(
     name: &str,
     description: &str,
     content: &str,
+    category: &str,
 ) -> Result<()> {
     conn.execute(
-        "UPDATE prompts SET name = ?1, description = ?2, content = ?3 WHERE id = ?4",
-        params![name, description, content, id],
+        "UPDATE prompts SET name = ?1, description = ?2, content = ?3, category = ?4 WHERE id = ?5",
+        params![name, description, content, category, id],
     )?;
     Ok(())
 }
@@ -198,9 +253,15 @@ pub fn delete_prompt(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
+pub fn prompt_count(conn: &Connection) -> Result<i64> {
+    conn.query_row("SELECT COUNT(*) FROM prompts", [], |row| row.get(0))
+        .context("Failed to count prompts")
+}
+
 pub fn load_prompts(conn: &Connection) -> Result<Vec<Prompt>> {
-    let mut stmt =
-        conn.prepare("SELECT id, name, description, content FROM prompts ORDER BY name ASC")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, description, content, category FROM prompts ORDER BY name ASC",
+    )?;
     let prompts = stmt
         .query_map(params![], |row| {
             Ok(Prompt {
@@ -208,6 +269,7 @@ pub fn load_prompts(conn: &Connection) -> Result<Vec<Prompt>> {
                 name: row.get(1)?,
                 description: row.get(2)?,
                 content: row.get(3)?,
+                category: row.get(4)?,
             })
         })
         .context("Failed to query prompts")?
@@ -217,8 +279,9 @@ pub fn load_prompts(conn: &Connection) -> Result<Vec<Prompt>> {
 }
 
 pub fn get_prompt_by_id(conn: &Connection, id: i64) -> Result<Option<Prompt>> {
-    let mut stmt =
-        conn.prepare("SELECT id, name, description, content FROM prompts WHERE id = ?1")?;
+    let mut stmt = conn.prepare(
+        "SELECT id, name, description, content, category FROM prompts WHERE id = ?1",
+    )?;
     let mut rows = stmt.query(params![id])?;
     let Some(row) = rows.next()? else {
         return Ok(None);
@@ -228,6 +291,7 @@ pub fn get_prompt_by_id(conn: &Connection, id: i64) -> Result<Option<Prompt>> {
         name: row.get(1)?,
         description: row.get(2)?,
         content: row.get(3)?,
+        category: row.get(4)?,
     }))
 }
 
@@ -409,30 +473,42 @@ mod tests {
             "greeting",
             "Friendly greeting",
             r#"Hello <var name="name" type="text" value="world" />"#,
+            "general",
         )
         .unwrap();
         let prompts = load_prompts(&conn).unwrap();
         assert_eq!(prompts.len(), 1);
         assert_eq!(prompts[0].name, "greeting");
         assert_eq!(prompts[0].description, "Friendly greeting");
+        assert_eq!(prompts[0].category, "general");
     }
 
     #[test]
     fn test_update() {
         let (conn, _f) = test_db();
-        let id = upsert_prompt(&conn, "draft", "old description", "old content").unwrap();
-        update_prompt(&conn, id, "final", "new description", "new content").unwrap();
+        let id = upsert_prompt(&conn, "draft", "old description", "old content", "general")
+            .unwrap();
+        update_prompt(
+            &conn,
+            id,
+            "final",
+            "new description",
+            "new content",
+            "development",
+        )
+        .unwrap();
         let prompts = load_prompts(&conn).unwrap();
         assert_eq!(prompts.len(), 1);
         assert_eq!(prompts[0].name, "final");
         assert_eq!(prompts[0].description, "new description");
         assert_eq!(prompts[0].content, "new content");
+        assert_eq!(prompts[0].category, "development");
     }
 
     #[test]
     fn test_delete() {
         let (conn, _f) = test_db();
-        let id = upsert_prompt(&conn, "temp", "temporary", "content").unwrap();
+        let id = upsert_prompt(&conn, "temp", "temporary", "content", "general").unwrap();
         delete_prompt(&conn, id).unwrap();
         assert!(load_prompts(&conn).unwrap().is_empty());
     }
@@ -456,6 +532,32 @@ mod tests {
         let prompts = load_prompts(&conn).unwrap();
         assert_eq!(prompts.len(), 1);
         assert_eq!(prompts[0].description, "");
+        assert_eq!(prompts[0].category, "general");
+    }
+
+    #[test]
+    fn test_migrates_category_column() {
+        let f = NamedTempFile::new().unwrap();
+        let conn = Connection::open(f.path()).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE schema_version (version INTEGER NOT NULL);
+             INSERT INTO schema_version (version) VALUES (2);
+             CREATE TABLE prompts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT UNIQUE NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                content TEXT NOT NULL
+             );
+             INSERT INTO prompts (name, description, content)
+             VALUES ('legacy', 'desc', 'content');",
+        )
+        .unwrap();
+        drop(conn);
+
+        let conn = init_db(f.path()).unwrap();
+        let prompts = load_prompts(&conn).unwrap();
+        assert_eq!(prompts.len(), 1);
+        assert_eq!(prompts[0].category, "general");
     }
 
     #[test]

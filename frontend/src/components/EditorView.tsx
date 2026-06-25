@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import {
+  CATEGORIES,
+  DEFAULT_CATEGORY,
+} from "../lib/categories";
 import type { Prompt } from "../types";
 import {
   TemplateEditor,
@@ -101,6 +105,20 @@ export function EditorView({
               defaultValue={p?.description ?? ""}
               placeholder="Short summary shown next to the title"
             />
+          </label>
+          <label>
+            Category
+            <select
+              name="category"
+              defaultValue={p?.category ?? DEFAULT_CATEGORY}
+            >
+              {CATEGORIES.map((category) => (
+                <option key={category.slug} value={category.slug}>
+                  {category.label}
+                </option>
+              ))}
+              <option value={DEFAULT_CATEGORY}>General</option>
+            </select>
           </label>
           <label className="template-content-field">
             Template Content

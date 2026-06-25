@@ -1,0 +1,137 @@
+{
+  "version": 1,
+  "prompts": [
+    {
+      "name": "Code Review",
+      "description": "Review pasted code with configurable focus and strictness",
+      "category": "development",
+      "content": "You are a senior engineer reviewing code.\n\nLanguage/stack: <var name=\"language\" type=\"text\" value=\"\" label=\"Language or stack\" placeholder=\"e.g. Rust, React\" />\n\nFocus: <var name=\"focus\" type=\"option\" options=\"correctness,security,performance,readability,all\" value=\"all\" label=\"Review focus\" />\n\nSeverity: <var name=\"severity\" type=\"option\" options=\"nitpick,normal,strict\" value=\"normal\" label=\"How strict\" />\n\nCode:\n<var name=\"code\" type=\"multiline\" value=\"\" label=\"Code to review\" placeholder=\"Paste code or diff\" />\n\nReview for bugs, edge cases, and maintainability. For each issue: location, problem, suggested fix. Skip praise unless it teaches something. Match the severity level."
+    },
+    {
+      "name": "Explain Code",
+      "description": "Explain what code does for a chosen audience and depth",
+      "category": "development",
+      "content": "Explain the following code.\n\nAudience: <var name=\"audience\" type=\"option\" options=\"junior dev,peer,non-technical\" value=\"peer\" label=\"Audience\" />\n\nDepth: <var name=\"depth\" type=\"option\" options=\"tldr,standard,deep dive\" value=\"standard\" label=\"Depth\" />\n\nCode:\n<var name=\"code\" type=\"multiline\" value=\"\" label=\"Code\" placeholder=\"Paste code\" />\n\nCover purpose, data flow, and non-obvious behavior. Use examples where helpful."
+    },
+    {
+      "name": "Debug Error",
+      "description": "Diagnose errors from logs or stack traces and suggest fixes",
+      "category": "development",
+      "content": "Help me debug this issue.\n\nEnvironment: <var name=\"environment\" type=\"text\" value=\"\" label=\"Environment\" placeholder=\"OS, runtime, versions\" />\n\nError or logs:\n<var name=\"error_or_logs\" type=\"multiline\" value=\"\" label=\"Error or logs\" placeholder=\"Paste stack trace or logs\" />\n\nWhat I tried:\n<var name=\"what_i_tried\" type=\"multiline\" value=\"\" label=\"What I tried\" placeholder=\"Steps already taken\" />\n\nConstraints: <var name=\"constraints\" type=\"text\" value=\"minimal diff\" label=\"Constraints\" placeholder=\"e.g. no new deps\" />\n\nIdentify root cause, explain why it happens, and propose a concrete fix. List verification steps."
+    },
+    {
+      "name": "Minimal Change",
+      "description": "Request a focused change with explicit constraints for coding agents",
+      "category": "development",
+      "content": "Make a minimal, focused change.\n\nGoal: <var name=\"goal\" type=\"text\" value=\"\" label=\"Goal\" placeholder=\"What should change\" />\n\nContext:\n<var name=\"context\" type=\"multiline\" value=\"\" label=\"Context\" placeholder=\"Relevant code, files, or behavior\" />\n\nMust not:\n<var name=\"must_not\" type=\"multiline\" value=\"\" label=\"Must not\" placeholder=\"Out of scope or forbidden changes\" />\n\nTest after: <var name=\"test_after\" type=\"option\" options=\"yes,no,suggest tests\" value=\"yes\" label=\"Testing\" />\n\nPrefer the smallest correct diff. Explain trade-offs only if necessary."
+    },
+    {
+      "name": "Write Tests",
+      "description": "Generate tests for pasted code with framework and coverage options",
+      "category": "development",
+      "content": "Write tests for the following code.\n\nFramework: <var name=\"framework\" type=\"text\" value=\"\" label=\"Test framework\" placeholder=\"e.g. vitest, pytest\" />\n\nCoverage: <var name=\"coverage\" type=\"option\" options=\"happy path,edge cases,full\" value=\"edge cases\" label=\"Coverage\" />\n\nStyle: <var name=\"style\" type=\"option\" options=\"unit,integration,property-based\" value=\"unit\" label=\"Test style\" />\n\nCode:\n<var name=\"code\" type=\"multiline\" value=\"\" label=\"Code under test\" placeholder=\"Paste implementation\" />\n\nInclude clear test names and assertions. Cover edge cases per the coverage setting."
+    },
+    {
+      "name": "Refactor",
+      "description": "Refactor code toward a stated goal with constraints",
+      "category": "development",
+      "content": "Refactor the following code.\n\nGoal: <var name=\"goal\" type=\"option\" options=\"simplify,extract,rename,performance,types\" value=\"simplify\" label=\"Refactor goal\" />\n\nConstraints: <var name=\"constraints\" type=\"text\" value=\"preserve behavior\" label=\"Constraints\" placeholder=\"e.g. no API changes\" />\n\nCode:\n<var name=\"code\" type=\"multiline\" value=\"\" label=\"Code\" placeholder=\"Paste code to refactor\" />\n\nPreserve observable behavior unless stated otherwise. Show the refactored code and briefly note what improved."
+    },
+    {
+      "name": "Agent System Prompt",
+      "description": "Reusable base persona and rules for a coding agent",
+      "category": "agents",
+      "content": "You are an AI coding agent with the following role and rules.\n\nRole: <var name=\"role\" type=\"text\" value=\"senior software engineer\" label=\"Role\" />\n\nProject context:\n<var name=\"project_context\" type=\"multiline\" value=\"\" label=\"Project context\" placeholder=\"Stack, architecture, conventions\" />\n\nCoding standards:\n<var name=\"coding_standards\" type=\"multiline\" value=\"\" label=\"Coding standards\" placeholder=\"Style, patterns, forbidden practices\" />\n\nOutput format: <var name=\"output_format\" type=\"option\" options=\"prose,numbered steps,patch-only,markdown report\" value=\"numbered steps\" label=\"Output format\" />\n\nVerbosity: <var name=\"verbosity\" type=\"option\" options=\"concise,balanced,thorough\" value=\"balanced\" label=\"Verbosity\" />\n\nFollow these rules throughout the session. Ask clarifying questions only when blocked."
+    },
+    {
+      "name": "Explore Codebase",
+      "description": "Structured task for an agent to find how something works",
+      "category": "agents",
+      "content": "Explore the codebase and answer this question.\n\nQuestion: <var name=\"question\" type=\"text\" value=\"\" label=\"Question\" placeholder=\"What do you need to find?\" />\n\nSearch scope: <var name=\"search_scope\" type=\"text\" value=\"\" label=\"Search scope\" placeholder=\"Dirs, modules, or files to prioritize\" />\n\nRepo context:\n<var name=\"repo_context\" type=\"multiline\" value=\"\" label=\"Repo context\" placeholder=\"README excerpt, tree, or notes\" />\n\nAnswer format: <var name=\"answer_format\" type=\"option\" options=\"summary,file references,step-by-step trace\" value=\"file references\" label=\"Answer format\" />\n\nTrace the flow from entry point to outcome. Cite specific files and symbols."
+    },
+    {
+      "name": "Implement Feature",
+      "description": "Structured feature request with acceptance criteria for agents",
+      "category": "agents",
+      "content": "Implement the following feature.\n\nFeature: <var name=\"feature\" type=\"text\" value=\"\" label=\"Feature\" placeholder=\"One-line summary\" />\n\nAcceptance criteria:\n<var name=\"acceptance_criteria\" type=\"multiline\" value=\"\" label=\"Acceptance criteria\" placeholder=\"Bullet list of done conditions\" />\n\nFiles or areas: <var name=\"files_or_areas\" type=\"text\" value=\"\" label=\"Files or areas\" placeholder=\"Where to work\" />\n\nOut of scope:\n<var name=\"out_of_scope\" type=\"multiline\" value=\"\" label=\"Out of scope\" placeholder=\"What not to change\" />\n\nVerify with: <var name=\"verify_with\" type=\"text\" value=\"tests and manual check\" label=\"Verification\" />\n\nPlan briefly, then implement. Run or suggest tests before finishing."
+    },
+    {
+      "name": "Subtask Handoff",
+      "description": "Hand off a subtask to a sub-agent or fresh chat with context",
+      "category": "agents",
+      "content": "You are taking over a subtask from a larger effort.\n\nParent goal: <var name=\"parent_goal\" type=\"text\" value=\"\" label=\"Parent goal\" />\n\nThis subtask: <var name=\"this_subtask\" type=\"text\" value=\"\" label=\"This subtask\" />\n\nDone when:\n<var name=\"done_when\" type=\"multiline\" value=\"\" label=\"Done when\" placeholder=\"Completion criteria\" />\n\nContext to carry:\n<var name=\"context_to_carry\" type=\"multiline\" value=\"\" label=\"Context to carry\" placeholder=\"Decisions, files, constraints\" />\n\nBlockers:\n<var name=\"blockers\" type=\"multiline\" value=\"\" label=\"Blockers\" placeholder=\"Known risks or dependencies\" />\n\nComplete only this subtask. Report what changed and what remains."
+    },
+    {
+      "name": "PR Description",
+      "description": "Generate a pull request description from changes and test plan",
+      "category": "communication",
+      "content": "Write a pull request description.\n\nSummary: <var name=\"summary\" type=\"text\" value=\"\" label=\"Summary\" placeholder=\"One-line summary\" />\n\nChanges:\n<var name=\"changes\" type=\"multiline\" value=\"\" label=\"Changes\" placeholder=\"What changed and why\" />\n\nTest plan:\n<var name=\"test_plan\" type=\"multiline\" value=\"\" label=\"Test plan\" placeholder=\"How this was verified\" />\n\nBreaking changes: <var name=\"breaking\" type=\"option\" options=\"none,yes,maybe\" value=\"none\" label=\"Breaking changes\" />\n\nUse markdown with Summary, Changes, and Test plan sections. Be concise."
+    },
+    {
+      "name": "Commit Message",
+      "description": "Write a commit message from a diff summary or change list",
+      "category": "communication",
+      "content": "Write a commit message for these changes.\n\nConvention: <var name=\"convention\" type=\"option\" options=\"conventional commits,plain,semantic\" value=\"conventional commits\" label=\"Convention\" />\n\nScope: <var name=\"scope\" type=\"text\" value=\"\" label=\"Scope\" placeholder=\"Optional scope, e.g. api\" />\n\nDiff or summary:\n<var name=\"diff_or_summary\" type=\"multiline\" value=\"\" label=\"Diff or summary\" placeholder=\"Paste diff or bullet list\" />\n\nSubject line max 72 chars. Include body only if it adds context."
+    },
+    {
+      "name": "Bug Report",
+      "description": "Structured bug report or issue template",
+      "category": "communication",
+      "content": "Write a bug report.\n\nTitle: <var name=\"title\" type=\"text\" value=\"\" label=\"Title\" />\n\nSteps to reproduce:\n<var name=\"steps\" type=\"multiline\" value=\"\" label=\"Steps to reproduce\" />\n\nExpected: <var name=\"expected\" type=\"text\" value=\"\" label=\"Expected behavior\" />\n\nActual: <var name=\"actual\" type=\"text\" value=\"\" label=\"Actual behavior\" />\n\nEnvironment: <var name=\"environment\" type=\"text\" value=\"\" label=\"Environment\" placeholder=\"OS, browser, version\" />\n\nUse clear markdown sections. Include reproduction steps a stranger can follow."
+    },
+    {
+      "name": "Status Update",
+      "description": "Team or stakeholder status update from bullet notes",
+      "category": "communication",
+      "content": "Write a status update.\n\nAudience: <var name=\"audience\" type=\"option\" options=\"team,manager,client\" value=\"team\" label=\"Audience\" />\n\nPeriod: <var name=\"period\" type=\"text\" value=\"this week\" label=\"Period\" />\n\nDone:\n<var name=\"done\" type=\"multiline\" value=\"\" label=\"Done\" placeholder=\"Completed items\" />\n\nBlocked:\n<var name=\"blocked\" type=\"multiline\" value=\"\" label=\"Blocked\" placeholder=\"Blockers or risks\" />\n\nNext:\n<var name=\"next\" type=\"multiline\" value=\"\" label=\"Next\" placeholder=\"Upcoming work\" />\n\nMatch tone to audience. Lead with outcomes, not activity."
+    },
+    {
+      "name": "Draft from Brief",
+      "description": "Turn bullet notes into polished prose",
+      "category": "writing",
+      "content": "Draft prose from the following brief.\n\nTopic: <var name=\"topic\" type=\"text\" value=\"\" label=\"Topic\" />\n\nKey points:\n<var name=\"key_points\" type=\"multiline\" value=\"\" label=\"Key points\" placeholder=\"Bullets or rough notes\" />\n\nAudience: <var name=\"audience\" type=\"option\" options=\"general,technical,executive,customer\" value=\"general\" label=\"Audience\" />\n\nTone: <var name=\"tone\" type=\"option\" options=\"professional,friendly,persuasive,neutral\" value=\"professional\" label=\"Tone\" />\n\nLength: <var name=\"length\" type=\"option\" options=\"short,medium,long\" value=\"medium\" label=\"Length\" />\n\nFormat: <var name=\"format\" type=\"option\" options=\"paragraph,bullets,memo,blog section\" value=\"paragraph\" label=\"Format\" />\n\nWrite clear, well-structured copy. Do not invent facts beyond the brief."
+    },
+    {
+      "name": "Rewrite for Tone",
+      "description": "Rewrite draft text for a target tone without changing meaning",
+      "category": "writing",
+      "content": "Rewrite the following draft.\n\nTarget tone: <var name=\"target_tone\" type=\"option\" options=\"clearer,more formal,more casual,more concise,more engaging\" value=\"clearer\" label=\"Target tone\" />\n\nPreserve: <var name=\"preserve\" type=\"text\" value=\"meaning and technical terms\" label=\"Preserve\" />\n\nDraft:\n<var name=\"draft\" type=\"multiline\" value=\"\" label=\"Draft\" placeholder=\"Paste text to rewrite\" />\n\nKeep the same facts and intent. Output only the rewritten text unless asked otherwise."
+    },
+    {
+      "name": "Email",
+      "description": "Draft a professional email from purpose and bullet points",
+      "category": "writing",
+      "content": "Draft an email.\n\nPurpose: <var name=\"purpose\" type=\"text\" value=\"\" label=\"Purpose\" />\n\nRecipient context: <var name=\"recipient_context\" type=\"text\" value=\"\" label=\"Recipient context\" placeholder=\"Who they are, relationship\" />\n\nMust include:\n<var name=\"must_include\" type=\"multiline\" value=\"\" label=\"Must include\" placeholder=\"Points to cover\" />\n\nTone: <var name=\"tone\" type=\"option\" options=\"formal,friendly,urgent,apologetic\" value=\"friendly\" label=\"Tone\" />\n\nLength: <var name=\"length\" type=\"option\" options=\"brief,standard\" value=\"brief\" label=\"Length\" />\n\nInclude subject line and body. No filler."
+    },
+    {
+      "name": "Social Post",
+      "description": "Draft a social media post for a chosen platform",
+      "category": "writing",
+      "content": "Draft a social media post.\n\nMessage:\n<var name=\"message\" type=\"multiline\" value=\"\" label=\"Message\" placeholder=\"Core idea or bullets\" />\n\nPlatform: <var name=\"platform\" type=\"option\" options=\"LinkedIn,X/Twitter,Mastodon,generic\" value=\"LinkedIn\" label=\"Platform\" />\n\nInclude CTA: <var name=\"include_cta\" type=\"option\" options=\"yes,no\" value=\"no\" label=\"Include call to action\" />\n\nHashtags: <var name=\"hashtags\" type=\"option\" options=\"none,few,suggest\" value=\"few\" label=\"Hashtags\" />\n\nMatch platform norms for length and tone. Output only the post."
+    },
+    {
+      "name": "Image Prompt Builder",
+      "description": "Build a polished image-generation prompt from subject and style options",
+      "category": "image",
+      "content": "Build an image-generation prompt.\n\nSubject:\n<var name=\"subject\" type=\"multiline\" value=\"\" label=\"Subject\" placeholder=\"What to depict\" />\n\nStyle: <var name=\"style\" type=\"option\" options=\"photorealistic,digital illustration,watercolor,3D render,anime,pixel art,flat vector\" value=\"photorealistic\" label=\"Style\" />\n\nMood: <var name=\"mood\" type=\"text\" value=\"\" label=\"Mood\" placeholder=\"e.g. moody, cinematic\" />\n\nComposition: <var name=\"composition\" type=\"text\" value=\"\" label=\"Composition\" placeholder=\"e.g. wide shot, rule of thirds\" />\n\nLighting: <var name=\"lighting\" type=\"option\" options=\"natural,studio,golden hour,neon,dramatic,soft\" value=\"natural\" label=\"Lighting\" />\n\nAspect ratio: <var name=\"aspect_ratio\" type=\"option\" options=\"1:1,16:9,9:16,4:3,3:2\" value=\"16:9\" label=\"Aspect ratio\" />\n\nAvoid:\n<var name=\"negative\" type=\"multiline\" value=\"\" label=\"Avoid\" placeholder=\"Optional: what to exclude\" />\n\nOutput a single polished image prompt. No preamble. Include style, composition, lighting, and quality cues. If avoid is provided, append as \"Avoid: …\"."
+    },
+    {
+      "name": "App Icon / Logo",
+      "description": "Image prompt for app icon or logo concepts",
+      "category": "image",
+      "content": "Create an image-generation prompt for an app icon or logo.\n\nApp or brand: <var name=\"app_or_brand\" type=\"text\" value=\"\" label=\"App or brand\" />\n\nConcept:\n<var name=\"concept\" type=\"multiline\" value=\"\" label=\"Concept\" placeholder=\"Visual idea or metaphor\" />\n\nStyle: <var name=\"style\" type=\"option\" options=\"minimal flat,glyph,skeuomorphic,line art,playful\" value=\"minimal flat\" label=\"Style\" />\n\nColors: <var name=\"colors\" type=\"text\" value=\"\" label=\"Colors\" placeholder=\"Palette or brand colors\" />\n\nBackground: <var name=\"background\" type=\"option\" options=\"transparent,solid,gradient\" value=\"transparent\" label=\"Background\" />\n\nOutput one concise prompt suitable for icon generators. Square composition, readable at small sizes."
+    },
+    {
+      "name": "UI Mockup Scene",
+      "description": "Image prompt for a UI mockup or screen design",
+      "category": "image",
+      "content": "Create an image-generation prompt for a UI mockup.\n\nScreen description:\n<var name=\"screen_description\" type=\"multiline\" value=\"\" label=\"Screen description\" placeholder=\"Layout, components, content\" />\n\nDevice: <var name=\"device\" type=\"option\" options=\"desktop,mobile,tablet,browser window\" value=\"desktop\" label=\"Device\" />\n\nUI style: <var name=\"ui_style\" type=\"option\" options=\"minimal,dense dashboard,playful,enterprise\" value=\"minimal\" label=\"UI style\" />\n\nTheme: <var name=\"theme\" type=\"option\" options=\"light,dark,system\" value=\"light\" label=\"Theme\" />\n\nOutput a single detailed prompt for a realistic UI mockup image. Specify framing and fidelity."
+    },
+    {
+      "name": "Iterate Variation",
+      "description": "Refine an existing image prompt with controlled changes",
+      "category": "image",
+      "content": "Refine an image-generation prompt.\n\nCurrent prompt:\n<var name=\"current_prompt\" type=\"multiline\" value=\"\" label=\"Current prompt\" placeholder=\"Existing image prompt\" />\n\nChange:\n<var name=\"change\" type=\"multiline\" value=\"\" label=\"Change\" placeholder=\"What to adjust\" />\n\nKeep:\n<var name=\"keep\" type=\"multiline\" value=\"\" label=\"Keep\" placeholder=\"What must stay the same\" />\n\nStrength: <var name=\"strength\" type=\"option\" options=\"subtle,moderate,strong\" value=\"moderate\" label=\"Change strength\" />\n\nOutput only the revised image prompt. Preserve elements listed under keep."
+    }
+  ]
+}

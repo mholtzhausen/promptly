@@ -6,7 +6,9 @@ A Linux desktop system-tray application that manages prompt templates with varia
 
 - **System Tray Icon**: freedesktop StatusNotifierItem via `ksni`.
 - **Global Hotkey**: `Ctrl+Alt+Space` toggles the prompt window. X11 uses `XGrabKey`; Wayland falls back to `rdev`.
-- **Fuzzy Search**: Filter templates by name, description, or content (client-side).
+- **Fuzzy Search**: Filter templates by name, description, category, or content (client-side).
+- **Category Filter**: Group templates by category (Development, Agents, Writing, Image, and more) with checklist filtering and colored labels on the list.
+- **Starter Pack**: First launch and `promptly --seed` install built-in AI assistant prompt templates.
 - **Variable Interpolation**: Templates with `<var name="…" type="…" />` placeholders open a type-aware input screen (legacy `{{…}}` syntax is migrated automatically).
 - **Type-Aware Inputs**: Text, number, option (dropdown), and multiline fields.
 - **Live Preview**: Interpolated prompt updates as you fill variables; editable before copy.
@@ -88,8 +90,11 @@ Or use `./run.sh` (equivalent to `make run`).
 promptly --version              # print version
 promptly --show                 # show the prompt window (used by tray/hotkey path)
 promptly update                 # install latest release and restart the service
-promptly export [path]          # export prompts (+ history) to JSON
+promptly export [path]          # export prompts to JSON
 promptly import <path>          # import prompts from JSON
+promptly seed                   # upsert built-in starter templates (alias: --seed)
+promptly --seed                 # same as promptly seed
+promptly --seed --show          # refresh starters, then show the window
 ```
 
 Optional environment variables for update checks and installs: `PROMPTLY_INSTALL_REPO` (default `mholtzhausen/promptly`), `GITHUB_TOKEN` (GitHub API rate limits), `PROMPTLY_MANAGE_SERVICE=1` (set automatically by `promptly update`).

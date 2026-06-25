@@ -85,7 +85,7 @@ impl DesktopEffects for FakeEffects {
 
 pub fn test_backend() -> (IpcBackend, tempfile::NamedTempFile) {
     let file = tempfile::NamedTempFile::new().unwrap();
-    let backend = IpcBackend::new(file.path().to_path_buf()).unwrap();
+    let backend = IpcBackend::new_for_test(file.path().to_path_buf()).unwrap();
     (backend, file)
 }
 

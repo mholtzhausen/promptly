@@ -1,5 +1,7 @@
 //! IPC payload size limits and validation.
 
+use crate::db::{self, validate_category};
+
 pub const MAX_PROMPT_NAME_LEN: usize = 256;
 pub const MAX_PROMPT_DESCRIPTION_LEN: usize = 4_096;
 pub const MAX_PROMPT_CONTENT_LEN: usize = 256 * 1024;
@@ -8,7 +10,16 @@ pub const MAX_VARIABLES_PER_TEMPLATE: usize = 128;
 pub const MAX_VARIABLE_VALUE_LEN: usize = 64 * 1024;
 pub const MAX_PRUNE_KEEP: i64 = 100_000;
 
-pub fn validate_prompt_fields(name: &str, description: &str, content: &str) -> Result<(), String> {
+pub fn normalize_category(category: &str) -> String {
+    db::normalize_category(category)
+}
+
+pub fn validate_prompt_fields(
+    name: &str,
+    description: &str,
+    content: &str,
+    category: &str,
+) -> Result<(), String> {
     if name.len() > MAX_PROMPT_NAME_LEN {
         return Err(format!(
             "Prompt name exceeds {MAX_PROMPT_NAME_LEN} characters"
@@ -25,7 +36,7 @@ pub fn validate_prompt_fields(name: &str, description: &str, content: &str) -> R
             MAX_PROMPT_CONTENT_LEN
         ));
     }
-    Ok(())
+    validate_category(category)
 }
 
 pub fn validate_template_content(content: &str) -> Result<(), String> {
@@ -81,11 +92,24 @@ mod tests {
     #[test]
     fn rejects_oversized_content() {
         let huge = "x".repeat(MAX_PROMPT_CONTENT_LEN + 1);
-        assert!(validate_prompt_fields("n", "d", &huge).is_err());
+        assert!(validate_prompt_fields("n", "d", &huge, "general").is_err());
     }
 
     #[test]
     fn accepts_valid_prompt() {
-        assert!(validate_prompt_fields("n", "d", "body").is_ok());
+        assert!(validate_prompt_fields("n", "d", "body", "development").is_ok());
+    }
+
+    #[test]
+    fn rejects_oversized_category() {
+        let huge = "x".repeat(db::MAX_PROMPT_CATEGORY_LEN + 1);
+        assert!(validate_category(&huge).is_err());
+    }
+
+    #[test]
+    fn normalize_category_defaults_empty() {
+        assert_eq!(normalize_category(""), db::DEFAULT_PROMPT_CATEGORY);
+        assert_eq!(normalize_category("  "), db::DEFAULT_PROMPT_CATEGORY);
+        assert_eq!(normalize_category(" writing "), "writing");
     }
 }

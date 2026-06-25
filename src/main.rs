@@ -9,6 +9,7 @@ mod instance;
 mod ipc;
 mod logging;
 mod prompt_parser;
+mod seed;
 mod tray;
 mod update;
 mod webview_app;
@@ -23,7 +24,11 @@ enum CliAction {
     Export { output: std::path::PathBuf },
     Import { input: std::path::PathBuf },
     Update,
-    Run { show_on_start: bool },
+    Seed,
+    Run {
+        show_on_start: bool,
+        seed_first: bool,
+    },
 }
 
 fn parse_cli() -> CliAction {
@@ -31,6 +36,7 @@ fn parse_cli() -> CliAction {
     if args.is_empty() {
         return CliAction::Run {
             show_on_start: false,
+            seed_first: false,
         };
     }
 
@@ -55,9 +61,18 @@ fn parse_cli() -> CliAction {
             CliAction::Import { input }
         }
         "update" => CliAction::Update,
+        "seed" => CliAction::Seed,
         _ => {
             let show_on_start = args.iter().any(|a| a == "--show" || a == "-s");
-            CliAction::Run { show_on_start }
+            let seed_first = args.iter().any(|a| a == "--seed");
+            let only_flags = args.iter().all(|a| a.starts_with('-'));
+            if seed_first && only_flags && !show_on_start {
+                return CliAction::Seed;
+            }
+            CliAction::Run {
+                show_on_start,
+                seed_first,
+            }
         }
     }
 }
@@ -79,7 +94,14 @@ fn daemonize() {
     std::process::exit(0);
 }
 
-fn run_gui(show_on_start: bool) -> Result<()> {
+fn run_gui(show_on_start: bool, seed_first: bool) -> Result<()> {
+    if seed_first {
+        logging::init_logging()?;
+        config::ensure_config_dir()?;
+        let count = cli::seed_prompts().context("seed failed")?;
+        println!("Seeded {count} prompt(s)");
+    }
+
     daemonize();
     logging::init_logging()?;
     let _lock = instance::InstanceLock::acquire()?;
@@ -146,6 +168,15 @@ fn main() -> Result<()> {
             update::run_update().context("update failed")?;
             Ok(())
         }
-        CliAction::Run { show_on_start } => run_gui(show_on_start),
+        CliAction::Seed => {
+            logging::init_logging()?;
+            let count = cli::seed_prompts().context("seed failed")?;
+            println!("Seeded {count} prompt(s)");
+            Ok(())
+        }
+        CliAction::Run {
+            show_on_start,
+            seed_first,
+        } => run_gui(show_on_start, seed_first),
     }
 }
