@@ -380,7 +380,7 @@ mod tests {
             &conn,
             "greeting",
             "Friendly greeting",
-            "Hello {{name|text|world|}}",
+            r#"Hello <var name="name" type="text" value="world" />"#,
         )
         .unwrap();
         let prompts = load_prompts(&conn).unwrap();

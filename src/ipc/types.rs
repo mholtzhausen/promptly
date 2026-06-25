@@ -136,7 +136,8 @@ pub struct VariableDto {
     pub name: String,
     pub kind: String,
     pub default_value: String,
-    pub description: String,
+    pub label: String,
+    pub placeholder: String,
     pub options: Vec<String>,
 }
 

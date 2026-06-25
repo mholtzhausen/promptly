@@ -9,13 +9,13 @@ fn prompt_roundtrip_matches_frontend_shape() {
         id: 1,
         name: "git".to_string(),
         description: "commit helper".to_string(),
-        content: "fix: {{msg|text||}}".to_string(),
+        content: r#"fix: <var name="msg" type="text" />"#.to_string(),
     };
     let json = serde_json::to_value(&sample).unwrap();
     assert_eq!(json["id"], 1);
     assert_eq!(json["name"], "git");
     assert_eq!(json["description"], "commit helper");
-    assert_eq!(json["content"], "fix: {{msg|text||}}");
+    assert_eq!(json["content"], r#"fix: <var name="msg" type="text" />"#);
 }
 
 #[test]
@@ -24,7 +24,8 @@ fn variable_dto_roundtrip_matches_frontend_shape() {
         name: "msg".to_string(),
         kind: "text".to_string(),
         default_value: String::new(),
-        description: "message".to_string(),
+        label: "message".to_string(),
+        placeholder: String::new(),
         options: vec![],
     };
     let json = serde_json::to_value(&dto).unwrap();

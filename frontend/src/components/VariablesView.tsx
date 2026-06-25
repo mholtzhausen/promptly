@@ -11,6 +11,11 @@ type VariablesViewProps = {
   onCopyAndClose: () => void;
 };
 
+function optionDefault(v: VariableDto): string {
+  if (v.defaultValue) return v.defaultValue;
+  return v.options[0] ?? "";
+}
+
 export function VariablesView({
   variablePrompt,
   variables,
@@ -29,14 +34,13 @@ export function VariablesView({
       <div className="variables-body">
         {variables.map((v) => (
           <label key={v.name} className="variable-field">
-            <span className="var-name">{v.name}</span>
-            {v.description && (
-              <span className="var-desc">{v.description}</span>
-            )}
+            <span className="var-name">{v.label || v.name}</span>
+            {v.label && <span className="var-desc">{v.name}</span>}
             {v.kind === "text" && (
               <input
                 type="text"
                 defaultValue={v.defaultValue}
+                placeholder={v.placeholder || undefined}
                 onChange={(e) => onVariableInput(v.name, e.target.value)}
               />
             )}
@@ -46,12 +50,13 @@ export function VariablesView({
                 defaultValue={
                   v.defaultValue ? parseFloat(v.defaultValue) || 0 : 0
                 }
+                placeholder={v.placeholder || undefined}
                 onChange={(e) => onVariableInput(v.name, e.target.value)}
               />
             )}
             {v.kind === "option" && (
               <select
-                defaultValue={v.options[0] ?? ""}
+                defaultValue={optionDefault(v)}
                 onChange={(e) => onVariableInput(v.name, e.target.value)}
               >
                 {v.options.map((opt) => (
@@ -65,6 +70,7 @@ export function VariablesView({
               <textarea
                 className="mono multiline"
                 defaultValue={v.defaultValue}
+                placeholder={v.placeholder || undefined}
                 onChange={(e) => onVariableInput(v.name, e.target.value)}
               />
             )}

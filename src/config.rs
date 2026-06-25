@@ -5,6 +5,8 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 pub const APP_NAME: &str = "promptly";
+/// POC branch: isolate DB/config/lock from production `~/.config/promptly`.
+pub const CONFIG_DIR_NAME: &str = "promptly-poc";
 
 pub const DEFAULT_WINDOW_WIDTH: f64 = 500.0;
 pub const DEFAULT_WINDOW_HEIGHT: f64 = 400.0;
@@ -14,7 +16,7 @@ const MIN_WINDOW_HEIGHT: f64 = 240.0;
 
 pub fn config_dir() -> PathBuf {
     let dir = dirs_next::config_dir().unwrap_or_else(|| PathBuf::from("."));
-    dir.join(APP_NAME)
+    dir.join(CONFIG_DIR_NAME)
 }
 
 pub fn config_file_path() -> PathBuf {

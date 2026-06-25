@@ -27,7 +27,11 @@ describe("useInterpolatePreview", () => {
 
     const { rerender } = renderHook(
       ({ values }: { values: Record<string, string> }) =>
-        useInterpolatePreview("Hello {{name|text||}}", values, setPreview),
+        useInterpolatePreview(
+          `Hello <var name="name" type="text" />`,
+          values,
+          setPreview,
+        ),
       { initialProps: { values: { name: "A" } } },
     );
 

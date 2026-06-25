@@ -1,10 +1,16 @@
-import type { RefObject } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import type { Prompt } from "../types";
+import {
+  TemplateEditor,
+  type TemplateEditorHandle,
+} from "./TemplateEditor";
 
 type EditorViewProps = {
   editingPrompt: Prompt | null;
   editorFormRef: RefObject<HTMLFormElement | null>;
   editorError: string | null;
+  content: string;
+  onContentChange: (value: string) => void;
   onClose: () => void;
   onSave: () => void;
 };
@@ -13,10 +19,25 @@ export function EditorView({
   editingPrompt,
   editorFormRef,
   editorError,
+  content,
+  onContentChange,
   onClose,
   onSave,
 }: EditorViewProps) {
+  const templateEditorRef = useRef<TemplateEditorHandle>(null);
   const p = editingPrompt;
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Insert" || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (document.querySelector(".var-edit-popover")) return;
+      e.preventDefault();
+      templateEditorRef.current?.insertVariable();
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => document.removeEventListener("keydown", onKeyDown, true);
+  }, []);
+
   return (
     <div className="app editor-view">
       <h1 className="panel-header">
@@ -44,21 +65,26 @@ export function EditorView({
           </label>
           <label className="template-content-field">
             Template Content
-            <textarea
-              name="content"
-              className="mono"
-              defaultValue={p?.content ?? ""}
+            <TemplateEditor
+              ref={templateEditorRef}
+              value={content}
+              onChange={onContentChange}
             />
           </label>
         </form>
       </div>
       <div className="editor-footer panel-footer">
-        <p className="help">
-          Use {"{{name|type|default|desc}}"} placeholders. Types: text, number,
-          option, multiline.
-        </p>
         {editorError && <p className="form-error">{editorError}</p>}
         <div className="buttons">
+          <button
+            type="button"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              templateEditorRef.current?.insertVariable();
+            }}
+          >
+            Insert Variable <kbd className="btn-kbd">Ins</kbd>
+          </button>
           <button type="button" onClick={onClose}>
             Cancel
           </button>

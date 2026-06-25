@@ -9,7 +9,8 @@ export interface VariableDto {
   name: string;
   kind: "text" | "number" | "option" | "multiline";
   defaultValue: string;
-  description: string;
+  label: string;
+  placeholder: string;
   options: string[];
 }
 

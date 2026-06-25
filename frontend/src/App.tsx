@@ -28,6 +28,7 @@ export default function App() {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
+  const [editorContent, setEditorContent] = useState("");
   const [deletingPrompt, setDeletingPrompt] = useState<Prompt | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
 
@@ -204,6 +205,7 @@ export default function App() {
 
   const openEdit = useCallback((p: Prompt) => {
     setEditingPrompt(p);
+    setEditorContent(p.content);
     setEditorError(null);
     setView("editor");
   }, []);
@@ -325,6 +327,7 @@ export default function App() {
 
   const openNew = useCallback(() => {
     setEditingPrompt(null);
+    setEditorContent("");
     setEditorError(null);
     setView("editor");
   }, []);
@@ -332,6 +335,7 @@ export default function App() {
   const closeEditor = useCallback(() => {
     setView("list");
     setEditingPrompt(null);
+    setEditorContent("");
     setEditorError(null);
     focusSearch();
   }, [focusSearch]);
@@ -345,7 +349,7 @@ export default function App() {
     const id = editingPrompt?.id ?? null;
     const name = ((data.get("name") as string) ?? "").trim();
     const description = ((data.get("description") as string) ?? "").trim();
-    const content = (data.get("content") as string) ?? "";
+    const content = editorContent;
 
     if (!name || !description || !content.trim()) {
       setEditorError("Name, description, and content are all required.");
@@ -372,8 +376,9 @@ export default function App() {
 
     setView("list");
     setEditingPrompt(null);
+    setEditorContent("");
     setEditorError(null);
-  }, [editingPrompt, savePrompt, patchPrompt]);
+  }, [editingPrompt, editorContent, savePrompt, patchPrompt]);
 
   const openDelete = useCallback((p: Prompt) => {
     setDeletingPrompt(p);
@@ -536,6 +541,8 @@ export default function App() {
         editingPrompt={editingPrompt}
         editorFormRef={editorFormRef}
         editorError={editorError}
+        content={editorContent}
+        onContentChange={setEditorContent}
         onClose={closeEditor}
         onSave={() => void handleSave()}
       />

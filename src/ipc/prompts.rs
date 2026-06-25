@@ -143,7 +143,8 @@ impl IpcBackend {
                     name: v.name,
                     kind: kind.to_string(),
                     default_value: v.default_value,
-                    description: v.description,
+                    label: v.label,
+                    placeholder: v.placeholder,
                     options,
                 }
             })
@@ -370,7 +371,7 @@ mod tests {
         let vars_raw = serde_json::json!({
             "id": "3",
             "command": "variablesForTemplate",
-            "payload": { "content": "Hello {{name|text|world|your name}}" }
+            "payload": { "content": r#"Hello <var name="name" type="text" value="world" label="your name" />"# }
         })
         .to_string();
         let resp = handle(&backend, &effects, &vars_raw);
@@ -378,14 +379,14 @@ mod tests {
         assert_eq!(var["name"], "name");
         assert_eq!(var["kind"], "text");
         assert_eq!(var["defaultValue"], "world");
-        assert_eq!(var["description"], "your name");
+        assert_eq!(var["label"], "your name");
         assert_eq!(var["options"].as_array().unwrap().len(), 0);
 
         let interp_raw = serde_json::json!({
             "id": "4",
             "command": "interpolate",
             "payload": {
-                "template": "Hello {{name|text|world|your name}}",
+                "template": r#"Hello <var name="name" type="text" value="world" label="your name" />"#,
                 "values": [{ "name": "name", "value": "Alice" }]
             }
         })

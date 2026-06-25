@@ -71,7 +71,7 @@ make uninstall        # remove user-local install
 
 CLI: `promptly --version`, `promptly export [path]`, `promptly import <path>`.
 Logs: `~/.local/state/promptly/promptly.log` when daemonized; `RUST_LOG=promptly=debug`.
-Single instance: flock on `~/.config/promptly/promptly.lock`.
+Single instance: flock on `~/.config/promptly-poc/promptly.lock` (POC branch).
 
 Convenience script: `./run.sh` (same as `make run`, bash-only).
 
@@ -104,11 +104,16 @@ Convenience script: `./run.sh` (same as `make run`, bash-only).
 - Fuzzy search is client-side only (`frontend/src/lib/fuzzy.ts`).
 - Typed IPC via `frontend/src/api/commands.ts`.
 
-### Template Syntax
+### Template Syntax (POC branch)
+```xml
+<var name="variable_name" type="text" value="default" label="Field label" placeholder="hint" />
+<var name="color" type="option" options="red,green,blue" value="red" label="Pick one" />
 ```
-{{variable_name|type|default value|description}}
-```
-Types: `text`, `number`, `option`, `multiline`.
+Required attributes: `name`, `type`. Types: `text`, `number`, `option`, `multiline`.
+
+Template editor: CodeMirror with inline variable chips; click chip to edit attributes via popover.
+
+POC data path: `~/.config/promptly-poc/` (DB, config, lock). Logs remain at `~/.local/state/promptly/`.
 
 ### History Title Format (Rust ↔ frontend contract)
 ```

@@ -66,7 +66,13 @@ mod tests {
         std::env::set_var("PROMPTLY_DB_PATH", db_file.path());
 
         let conn = db::init_db(db_file.path()).unwrap();
-        db::upsert_prompt(&conn, "demo", "desc", "content {{x|text||}}").unwrap();
+        db::upsert_prompt(
+            &conn,
+            "demo",
+            "desc",
+            r#"content <var name="x" type="text" />"#,
+        )
+        .unwrap();
 
         let export_path = db_file.path().with_extension("json");
         let count = export_prompts(&export_path).unwrap();
