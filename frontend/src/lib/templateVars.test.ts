@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyVarEdit,
   findVarTags,
   parseVarTag,
   replaceAllVarsWithName,
@@ -89,5 +90,27 @@ describe("templateVars", () => {
     expect(tags).toHaveLength(2);
     expect(tags.every((t) => t.attrs?.value === "new")).toBe(true);
     expect(tags.every((t) => t.attrs?.label === "Name")).toBe(true);
+  });
+
+  it("applyVarEdit merges into an existing variable name on rename", () => {
+    const tagA = `<var name="a" type="text" value="x" label="A" />`;
+    const tagB = `<var name="b" type="number" value="5" />`;
+    const content = `${tagA} mid ${tagB}`;
+    const bRange = findVarTags(content)[1]!;
+    const saved = {
+      name: "a",
+      type: "option" as const,
+      value: "red",
+      label: "Color",
+      placeholder: "",
+      options: "red,green,blue",
+    };
+    const updated = applyVarEdit(content, bRange.from, bRange.to, saved);
+    const tags = findVarTags(updated);
+    expect(tags).toHaveLength(2);
+    expect(tags.every((t) => t.attrs?.name === "a")).toBe(true);
+    expect(tags.every((t) => t.attrs?.type === "option")).toBe(true);
+    expect(tags.every((t) => t.attrs?.label === "Color")).toBe(true);
+    expect(tags.every((t) => t.attrs?.options === "red,green,blue")).toBe(true);
   });
 });

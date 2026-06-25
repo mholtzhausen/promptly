@@ -312,6 +312,14 @@ h1.panel-header {
   margin-top: 0;
 }
 
+.insert-var-btn--existing {
+  background-color: #e8eef3;
+}
+
+.insert-var-btn--existing:hover {
+  background-color: #d8e2eb;
+}
+
 .btn-kbd {
   display: inline-block;
   margin-left: 4px;

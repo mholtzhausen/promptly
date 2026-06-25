@@ -12,14 +12,26 @@ import { createVarDecorationsExtension } from "../editor/varDecorations";
 import { VarEditPopover } from "./VarEditPopover";
 import { VarPickerPopover } from "./VarPickerPopover";
 import {
+  applyVarEdit,
   defaultVarAttrs,
   nextVarName,
   parseVarTag,
-  replaceAllVarsWithName,
   serializeVar,
   uniqueVarsByName,
   type VarAttrs,
 } from "../lib/templateVars";
+
+function isControlKey(e: KeyboardEvent): boolean {
+  return (
+    e.key === "Control" || e.code === "ControlLeft" || e.code === "ControlRight"
+  );
+}
+
+function ctrlFromKeyboardEvent(e: KeyboardEvent): boolean {
+  if (e.type === "keyup" && isControlKey(e)) return false;
+  if (e.type === "keydown" && isControlKey(e)) return true;
+  return e.ctrlKey;
+}
 
 function rectFromPos(view: EditorView, pos: number): DOMRect {
   const coords = view.coordsAtPos(pos);
@@ -42,13 +54,14 @@ export type TemplateEditorHandle = {
 type TemplateEditorProps = {
   value: string;
   onChange: (value: string) => void;
+  onFocusChange?: (focused: boolean) => void;
+  onModifierChange?: (ctrlHeld: boolean) => void;
 };
 
 type EditState = {
   from: number;
   to: number;
   attrs: VarAttrs;
-  originalName: string;
   anchorRect: DOMRect;
 };
 
@@ -57,13 +70,17 @@ type PickerState = {
 };
 
 export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorProps>(
-  function TemplateEditor({ value, onChange }, ref) {
+  function TemplateEditor({ value, onChange, onFocusChange, onModifierChange }, ref) {
     const editorRef = useRef<ReactCodeMirrorRef>(null);
     const lastCursorPos = useRef(0);
     const [editState, setEditState] = useState<EditState | null>(null);
     const [pickerState, setPickerState] = useState<PickerState | null>(null);
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
+    const onFocusChangeRef = useRef(onFocusChange);
+    onFocusChangeRef.current = onFocusChange;
+    const onModifierChangeRef = useRef(onModifierChange);
+    onModifierChangeRef.current = onModifierChange;
 
     const openEditor = useCallback(
       (from: number, to: number, anchorRect: DOMRect) => {
@@ -76,7 +93,6 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
           from,
           to,
           attrs,
-          originalName: attrs.name,
           anchorRect,
         });
       },
@@ -103,12 +119,32 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
       [],
     );
 
+    const modifierListener = useMemo(
+      () =>
+        EditorView.domEventHandlers({
+          keydown(e) {
+            onModifierChangeRef.current?.(ctrlFromKeyboardEvent(e));
+            return false;
+          },
+          keyup(e) {
+            onModifierChangeRef.current?.(ctrlFromKeyboardEvent(e));
+            return false;
+          },
+          mousedown(e) {
+            onModifierChangeRef.current?.(e.ctrlKey);
+            return false;
+          },
+        }),
+      [],
+    );
+
     const extensions = useMemo(
       () => [
         createVarDecorationsExtension((info) =>
           chipClickRef.current(info.from, info.to, info.anchor),
         ),
         cursorListener,
+        modifierListener,
         EditorView.lineWrapping,
         EditorView.theme({
           "&": {
@@ -132,7 +168,7 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
           },
         }),
       ],
-      [cursorListener],
+      [cursorListener, modifierListener],
     );
 
     const applyChange = useCallback((from: number, to: number, insert: string) => {
@@ -215,6 +251,8 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
           height="100%"
           extensions={extensions}
           onChange={(v) => onChangeRef.current(v)}
+          onFocus={() => onFocusChangeRef.current?.(true)}
+          onBlur={() => onFocusChangeRef.current?.(false)}
           basicSetup={{
             lineNumbers: false,
             foldGutter: false,
@@ -244,28 +282,21 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
                 setEditState(null);
                 return;
               }
-              if (trimmedName === editState.originalName) {
-                const content = view.state.doc.toString();
-                const updated = replaceAllVarsWithName(
-                  content,
-                  editState.originalName,
-                  finalAttrs,
-                );
-                view.dispatch({
-                  changes: {
-                    from: 0,
-                    to: content.length,
-                    insert: updated,
-                  },
-                });
-                onChangeRef.current(updated);
-              } else {
-                applyChange(
-                  editState.from,
-                  editState.to,
-                  serializeVar(finalAttrs),
-                );
-              }
+              const content = view.state.doc.toString();
+              const updated = applyVarEdit(
+                content,
+                editState.from,
+                editState.to,
+                finalAttrs,
+              );
+              view.dispatch({
+                changes: {
+                  from: 0,
+                  to: content.length,
+                  insert: updated,
+                },
+              });
+              onChangeRef.current(updated);
               setEditState(null);
             }}
           />

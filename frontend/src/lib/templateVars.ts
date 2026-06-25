@@ -173,3 +173,15 @@ export function replaceAllVarsWithName(
   }
   return result;
 }
+
+/** Apply a chip edit, then sync every tag with the saved variable name. */
+export function applyVarEdit(
+  content: string,
+  editFrom: number,
+  editTo: number,
+  attrs: VarAttrs,
+): string {
+  const withEdit =
+    content.slice(0, editFrom) + serializeVar(attrs) + content.slice(editTo);
+  return replaceAllVarsWithName(withEdit, attrs.name, attrs);
+}

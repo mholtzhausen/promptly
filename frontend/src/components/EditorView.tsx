@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import type { Prompt } from "../types";
 import {
   TemplateEditor,
@@ -25,7 +25,42 @@ export function EditorView({
   onSave,
 }: EditorViewProps) {
   const templateEditorRef = useRef<TemplateEditorHandle>(null);
+  const [templateFocused, setTemplateFocused] = useState(false);
+  const [ctrlHeld, setCtrlHeld] = useState(false);
   const p = editingPrompt;
+  const insertExistingMode = templateFocused && ctrlHeld;
+
+  useEffect(() => {
+    const isControlKey = (e: KeyboardEvent) =>
+      e.key === "Control" ||
+      e.code === "ControlLeft" ||
+      e.code === "ControlRight";
+    const syncCtrl = (e: KeyboardEvent) => {
+      if (e.type === "keyup" && isControlKey(e)) {
+        setCtrlHeld(false);
+        return;
+      }
+      if (e.type === "keydown" && isControlKey(e)) {
+        setCtrlHeld(true);
+        return;
+      }
+      setCtrlHeld(e.ctrlKey);
+    };
+    const clearCtrl = () => setCtrlHeld(false);
+    document.addEventListener("keydown", syncCtrl, true);
+    document.addEventListener("keyup", syncCtrl, true);
+    window.addEventListener("blur", clearCtrl);
+    return () => {
+      document.removeEventListener("keydown", syncCtrl, true);
+      document.removeEventListener("keyup", syncCtrl, true);
+      window.removeEventListener("blur", clearCtrl);
+    };
+  }, []);
+
+  const handleTemplateFocusChange = (focused: boolean) => {
+    setTemplateFocused(focused);
+    if (!focused) setCtrlHeld(false);
+  };
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -73,6 +108,8 @@ export function EditorView({
               ref={templateEditorRef}
               value={content}
               onChange={onContentChange}
+              onFocusChange={handleTemplateFocusChange}
+              onModifierChange={setCtrlHeld}
             />
           </label>
         </form>
@@ -82,6 +119,14 @@ export function EditorView({
         <div className="buttons">
           <button
             type="button"
+            className={
+              insertExistingMode ? "insert-var-btn insert-var-btn--existing" : "insert-var-btn"
+            }
+            title={
+              insertExistingMode
+                ? "Reuse an existing variable (Ctrl+Ins or Ctrl+click)"
+                : "Insert a new variable (Ins or click)"
+            }
             onMouseDown={(e) => {
               e.preventDefault();
               if (e.ctrlKey) {
@@ -92,9 +137,8 @@ export function EditorView({
               }
             }}
           >
-            Insert Variable{" "}
-            <kbd className="btn-kbd">Ins</kbd>{" "}
-            <kbd className="btn-kbd">Ctrl+Ins</kbd>
+            {insertExistingMode ? "Insert Existing Variable" : "Insert Variable"}{" "}
+            <kbd className="btn-kbd">{insertExistingMode ? "Ctrl+Ins" : "Ins"}</kbd>
           </button>
           <button type="button" onClick={onClose}>
             Cancel
