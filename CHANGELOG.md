@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0+1] - 2026-06-25
+
+### Added
+
+- Template editor with CodeMirror variable chips, inline editing popover, and variable picker
+- `scripts/install.sh` for one-line user-local install from GitHub releases
+- Schema v2 migration: legacy `{{name|type|default|description}}` placeholders converted to `<var />` on database open
+
+### Changed
+
+- Restored production config path (`~/.config/promptly`) after POC branch isolation
+- README installation instructions and requirements
+- GitHub Actions release workflow and packaging gitignore
+
 ## [0.8.0] - 2026-06-25
 
 ### Added
@@ -43,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fuzzy search, variable interpolation, copy history
 - Global hotkey (Ctrl+Alt+Space) and ksni tray icon
 
-[Unreleased]: https://github.com/mholtzhausen/promptly/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/mholtzhausen/promptly/compare/v0.8.0+1...HEAD
+[0.8.0+1]: https://github.com/mholtzhausen/promptly/releases/tag/v0.8.0%2B1
 [0.8.0]: https://github.com/mholtzhausen/promptly/releases/tag/v0.8.0
 [0.1.0]: https://github.com/mholtzhausen/promptly/releases/tag/v0.1.0

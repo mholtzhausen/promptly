@@ -1,6 +1,6 @@
 [package]
 name = "promptly"
-version = "0.8.0"
+version = "0.8.0+1"
 edition = "2021"
 description = "System-tray prompt manager with fuzzy search and variable interpolation"
 

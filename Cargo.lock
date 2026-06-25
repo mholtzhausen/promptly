@@ -2486,7 +2486,7 @@ dependencies = [
 
 [[package]]
 name = "promptly"
-version = "0.8.0"
+version = "0.8.0+1"
 dependencies = [
  "anyhow",
  "arboard",

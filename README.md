@@ -7,7 +7,7 @@ A Linux desktop system-tray application that manages prompt templates with varia
 - **System Tray Icon**: freedesktop StatusNotifierItem via `ksni`.
 - **Global Hotkey**: `Ctrl+Alt+Space` toggles the prompt window. X11 uses `XGrabKey`; Wayland falls back to `rdev`.
 - **Fuzzy Search**: Filter templates by name, description, or content (client-side).
-- **Variable Interpolation**: Templates with `{{name|type|default|description}}` open a type-aware input screen.
+- **Variable Interpolation**: Templates with `<var name="…" type="…" />` placeholders open a type-aware input screen (legacy `{{…}}` syntax is migrated automatically).
 - **Type-Aware Inputs**: Text, number, option (dropdown), and multiline fields.
 - **Live Preview**: Interpolated prompt updates as you fill variables; editable before copy.
 - **Clipboard Integration**: Copies the final prompt; desktop notifications on success.
@@ -51,7 +51,7 @@ systemctl --user enable --now promptly.service
 Pin a specific release:
 
 ```bash
-PROMPTLY_VERSION=v0.8.0 curl -fsSL https://raw.githubusercontent.com/mholtzhausen/promptly/main/scripts/install.sh | bash
+PROMPTLY_VERSION=v0.8.0+1 curl -fsSL https://raw.githubusercontent.com/mholtzhausen/promptly/main/scripts/install.sh | bash
 ```
 
 To remove a user-local install: `make uninstall` (from a source checkout) or delete the files listed above manually.
