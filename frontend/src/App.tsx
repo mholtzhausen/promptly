@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { api, copyPromptToClipboard } from "./api/commands";
 import { useHostBridge } from "./bridge/host";
 import { DeleteView } from "./components/DeleteView";
@@ -7,6 +7,7 @@ import { EditorView } from "./components/EditorView";
 import { HistoryDetailView } from "./components/HistoryDetailView";
 import { HistoryView } from "./components/HistoryView";
 import { ListView } from "./components/ListView";
+import { NotificationFooter } from "./components/NotificationFooter";
 import { UpdateView } from "./components/UpdateView";
 import type { UpdateDialogPayload } from "./components/UpdateView";
 import { VariablesView } from "./components/VariablesView";
@@ -18,6 +19,7 @@ import {
   useSelectedIndexBounds,
 } from "./hooks/useListKeyboard";
 import { useHistory } from "./hooks/useHistory";
+import { useNotifications } from "./hooks/useNotifications";
 import { usePrompts } from "./hooks/usePrompts";
 import { filterHistory, filterPrompts } from "./lib/fuzzy";
 import type { View } from "./lib/view";
@@ -94,6 +96,11 @@ export default function App() {
     focusSearch();
   }, [loadPrompts, focusSearch, clearStatusError]);
 
+  const onShowAbout = useCallback(() => {
+    setView("about");
+    clearStatusError();
+  }, [clearStatusError]);
+
   const onShowUpdateDialog = useCallback((payload: UpdateDialogPayload) => {
     setUpdateDialog(payload);
     setUpdateInProgress(false);
@@ -101,10 +108,11 @@ export default function App() {
     clearStatusError();
   }, [clearStatusError]);
 
-  const onShowAbout = useCallback(() => {
-    setView("about");
-    clearStatusError();
-  }, [clearStatusError]);
+  const {
+    notifications,
+    dismissNotification,
+    runNotificationAction,
+  } = useNotifications({ onShowUpdateDialog });
 
   useHostBridge({ onShow, focusSearch, onShowUpdateDialog, onShowAbout });
 
@@ -576,8 +584,19 @@ export default function App() {
     [pruneHistoryKeep],
   );
 
+  const renderWithNotifications = (content: ReactNode) => (
+    <>
+      {content}
+      <NotificationFooter
+        notifications={notifications}
+        onDismiss={dismissNotification}
+        onAction={runNotificationAction}
+      />
+    </>
+  );
+
   if (view === "editor") {
-    return (
+    return renderWithNotifications(
       <EditorView
         editingPrompt={editingPrompt}
         editorFormRef={editorFormRef}
@@ -586,22 +605,22 @@ export default function App() {
         onContentChange={setEditorContent}
         onClose={closeEditor}
         onSave={() => void handleSave()}
-      />
+      />,
     );
   }
 
   if (view === "delete" && deletingPrompt) {
-    return (
+    return renderWithNotifications(
       <DeleteView
         deletingPrompt={deletingPrompt}
         onClose={closeDelete}
         onConfirm={() => void confirmDelete()}
-      />
+      />,
     );
   }
 
   if (view === "update" && updateDialog) {
-    return (
+    return renderWithNotifications(
       <UpdateView
         currentVersion={updateDialog.currentVersion}
         latestVersion={updateDialog.latestVersion}
@@ -609,16 +628,16 @@ export default function App() {
         updating={updateInProgress}
         onClose={closeUpdate}
         onConfirm={() => void confirmUpdate()}
-      />
+      />,
     );
   }
 
   if (view === "about") {
-    return <AboutView onClose={closeAbout} />;
+    return renderWithNotifications(<AboutView onClose={closeAbout} />);
   }
 
   if (view === "variables" && variablePrompt) {
-    return (
+    return renderWithNotifications(
       <VariablesView
         variablePrompt={variablePrompt}
         variables={variables}
@@ -628,24 +647,24 @@ export default function App() {
         onCancel={cancelVariables}
         onCopy={() => void copyVariables()}
         onCopyAndClose={() => void copyAndCloseVariables()}
-      />
+      />,
     );
   }
 
   if (view === "historyDetail" && historyDetail) {
-    return (
+    return renderWithNotifications(
       <HistoryDetailView
         historyDetail={historyDetail}
         historyDetailContent={historyDetailContent}
         setHistoryDetailContent={setHistoryDetailContent}
         onClose={closeHistoryDetail}
         onCopy={() => void copyHistoryDetail()}
-      />
+      />,
     );
   }
 
   if (view === "history") {
-    return (
+    return renderWithNotifications(
       <HistoryView
         historyQuery={historyQuery}
         setHistoryQuery={setHistoryQuery}
@@ -663,11 +682,11 @@ export default function App() {
         onOpenDetail={(entry) => void openHistoryDetail(entry)}
         onDeleteItem={(id, e) => void deleteHistoryItem(id)}
         onPruneKeep={(keep) => void handlePruneKeep(keep)}
-      />
+      />,
     );
   }
 
-  return (
+  return renderWithNotifications(
     <ListView
       query={query}
       setQuery={setQuery}
@@ -685,6 +704,6 @@ export default function App() {
       onEditPrompt={openEdit}
       onDeletePrompt={openDelete}
       statusError={statusError}
-    />
+    />,
   );
 }

@@ -12,9 +12,9 @@ use tao::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
 use tao::window::WindowBuilder;
 use wry::WebViewBuilder;
 
-use crate::ipc::{DesktopEffects, IpcBackend, RealDesktopEffects};
+use crate::ipc::{AppNotification, DesktopEffects, IpcBackend, NotificationCollector};
 use crate::tray::TrayState;
-use crate::update::{UpdateCheckOutcome, UpdateInfo};
+use crate::update::UpdateCheckOutcome;
 use crate::window_focus;
 
 /// User events delivered to the Tao event loop.
@@ -33,10 +33,10 @@ pub enum AppEvent {
         outcome: Result<UpdateCheckOutcome, String>,
         user_initiated: bool,
     },
-    /// Open the in-app update dialog (notification action or direct).
-    ShowUpdateDialog(UpdateInfo),
     /// Open the fixed-size About pane.
     ShowAbout,
+    /// Push in-app notifications to the React footer.
+    PushNotifications(Vec<AppNotification>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,10 +166,10 @@ impl PromptlyWebviewApp {
                     outcome,
                     user_initiated,
                 }) => state.handle_update_check_result(outcome, user_initiated),
-                Event::UserEvent(AppEvent::ShowUpdateDialog(info)) => {
-                    state.show_update_dialog(&info);
-                }
                 Event::UserEvent(AppEvent::ShowAbout) => state.show_about_pane(),
+                Event::UserEvent(AppEvent::PushNotifications(notifications)) => {
+                    state.push_notifications(&notifications);
+                }
                 Event::WindowEvent {
                     event: WindowEvent::Focused(true),
                     window_id,
@@ -232,6 +232,7 @@ impl PromptlyWebviewApp {
         window_focus::set_window_opacity(&self.window, 1.0);
         self.restore_main_geometry();
         self.window.set_visible(false);
+        self.notify_frontend_window_hidden();
     }
 
     fn centered_position(
@@ -328,8 +329,14 @@ impl PromptlyWebviewApp {
             return;
         }
         match self.show_intent.take() {
-            Some(ShowIntent::Main) => self.notify_frontend_show(),
-            Some(ShowIntent::About) => self.notify_frontend_about(),
+            Some(ShowIntent::Main) => {
+                self.notify_frontend_show();
+                self.notify_frontend_window_visible();
+            }
+            Some(ShowIntent::About) => {
+                self.notify_frontend_about();
+                self.notify_frontend_window_visible();
+            }
             None => {}
         }
     }
@@ -352,8 +359,41 @@ impl PromptlyWebviewApp {
             .evaluate_script("window.__promptlyShowAbout && window.__promptlyShowAbout();");
     }
 
+    fn notify_frontend_window_visible(&self) {
+        let _ = self.webview.evaluate_script(
+            "window.__promptlyOnWindowVisible && window.__promptlyOnWindowVisible();",
+        );
+    }
+
+    fn notify_frontend_window_hidden(&self) {
+        let _ = self.webview.evaluate_script(
+            "window.__promptlyOnWindowHidden && window.__promptlyOnWindowHidden();",
+        );
+    }
+
+    fn ephemeral_notification_ms(&self) -> u64 {
+        self.app_config.borrow().ephemeral_notification_ms()
+    }
+
+    fn push_notifications(&self, notifications: &[AppNotification]) {
+        if notifications.is_empty() {
+            return;
+        }
+        let Ok(json) = serde_json::to_string(notifications) else {
+            log::error!("Failed to serialize in-app notifications");
+            return;
+        };
+        let script = format!(
+            "window.__promptlyPushNotifications && window.__promptlyPushNotifications({json});"
+        );
+        if let Err(e) = self.webview.evaluate_script(&script) {
+            log::error!("Failed to push in-app notifications to frontend: {e}");
+        }
+    }
+
     fn spawn_update_check(&self, user_initiated: bool) {
         let proxy = self.event_proxy.clone();
+        let ephemeral_ms = self.ephemeral_notification_ms();
         std::thread::spawn(move || {
             let outcome = crate::update::check_for_updates().map_err(|e| e.to_string());
             if let Err(e) = proxy.send_event(AppEvent::UpdateCheckResult {
@@ -362,11 +402,13 @@ impl PromptlyWebviewApp {
             }) {
                 log::error!("Failed to post update check result to event loop: {e}");
                 if user_initiated {
+                    let collector = NotificationCollector::new(ephemeral_ms);
                     Self::deliver_update_check_notifications(
+                        &collector,
                         outcome,
                         true,
-                        proxy,
                     );
+                    let _ = proxy.send_event(AppEvent::PushNotifications(collector.take()));
                 }
             }
         });
@@ -377,29 +419,19 @@ impl PromptlyWebviewApp {
         outcome: Result<UpdateCheckOutcome, String>,
         user_initiated: bool,
     ) {
-        // Runs on the main/event-loop thread (same context as the working copy
-        // notifications). Deliver synchronously instead of deferring through a
-        // glib idle source so the notification is shown reliably.
-        Self::deliver_update_check_notifications(outcome, user_initiated, self.event_proxy.clone());
+        let collector = NotificationCollector::new(self.ephemeral_notification_ms());
+        Self::deliver_update_check_notifications(&collector, outcome, user_initiated);
+        self.push_notifications(&collector.take());
     }
 
     fn deliver_update_check_notifications(
+        effects: &NotificationCollector,
         outcome: Result<UpdateCheckOutcome, String>,
         user_initiated: bool,
-        event_proxy: EventLoopProxy<AppEvent>,
     ) {
-        let effects = RealDesktopEffects;
         match outcome {
             Ok(UpdateCheckOutcome::UpdateAvailable(info)) => {
-                let current = info.current.clone();
-                let latest = info.latest.clone();
-                effects.notify_update_available(
-                    &current,
-                    &latest,
-                    Box::new(move || {
-                        let _ = event_proxy.send_event(AppEvent::ShowUpdateDialog(info));
-                    }),
-                );
+                effects.notify_update_available(&info);
             }
             Ok(UpdateCheckOutcome::UpToDate { latest, .. }) => {
                 if user_initiated {
@@ -415,22 +447,10 @@ impl PromptlyWebviewApp {
         }
     }
 
-    fn show_update_dialog(&self, info: &UpdateInfo) {
-        self.show_window();
-        let payload = serde_json::json!({
-            "currentVersion": info.current,
-            "latestVersion": info.latest,
-            "changelog": info.changelog,
-        });
-        let script = format!(
-            "window.__promptlyShowUpdateDialog && window.__promptlyShowUpdateDialog({});",
-            payload
-        );
-        let _ = self.webview.evaluate_script(&script);
-    }
-
     fn handle_ipc(&self, raw: &str) {
-        let handled = self.backend.handle(raw, &RealDesktopEffects);
+        let effects = NotificationCollector::new(self.ephemeral_notification_ms());
+        let handled = self.backend.handle(raw, &effects);
+        let notifications = effects.take();
         let _ = self.webview.evaluate_script(&format!(
             "window.__promptlyReceive({});",
             handled.response_json
@@ -451,5 +471,6 @@ impl PromptlyWebviewApp {
         if handled.quit_app {
             std::process::exit(0);
         }
+        self.push_notifications(&notifications);
     }
 }

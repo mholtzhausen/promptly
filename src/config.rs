@@ -8,6 +8,7 @@ pub const APP_NAME: &str = "promptly";
 
 pub const DEFAULT_WINDOW_WIDTH: f64 = 500.0;
 pub const DEFAULT_WINDOW_HEIGHT: f64 = 400.0;
+pub const DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS: u64 = 3;
 
 pub const ABOUT_WINDOW_WIDTH: f64 = 400.0;
 pub const ABOUT_WINDOW_HEIGHT: f64 = 480.0;
@@ -77,10 +78,25 @@ impl WindowSize {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+fn default_ephemeral_notification_seconds() -> u64 {
+    DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub window: Option<WindowSize>,
+    #[serde(default = "default_ephemeral_notification_seconds")]
+    pub ephemeral_notification_seconds: u64,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            window: None,
+            ephemeral_notification_seconds: DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS,
+        }
+    }
 }
 
 impl AppConfig {
@@ -114,6 +130,10 @@ impl AppConfig {
     pub fn set_window_size(&mut self, width: f64, height: f64) {
         self.window = Some(WindowSize { width, height }.sanitized());
     }
+
+    pub fn ephemeral_notification_ms(&self) -> u64 {
+        self.ephemeral_notification_seconds.saturating_mul(1000)
+    }
 }
 
 #[cfg(test)]
@@ -134,6 +154,7 @@ mod tests {
                 width: 640.0,
                 height: 480.0,
             }),
+            ephemeral_notification_seconds: DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS,
         };
         let yaml = serde_yaml::to_string(&config).unwrap();
         let parsed: AppConfig = serde_yaml::from_str(&yaml).unwrap();
@@ -144,6 +165,27 @@ mod tests {
                 height: 480.0,
             }
         );
+    }
+
+    #[test]
+    fn default_config_uses_default_ephemeral_notification_seconds() {
+        let config = AppConfig::default();
+        assert_eq!(
+            config.ephemeral_notification_seconds,
+            DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS
+        );
+        assert_eq!(config.ephemeral_notification_ms(), 3000);
+    }
+
+    #[test]
+    fn yaml_roundtrip_preserves_ephemeral_notification_seconds() {
+        let config = AppConfig {
+            window: None,
+            ephemeral_notification_seconds: 5,
+        };
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        let parsed: AppConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.ephemeral_notification_seconds, 5);
     }
 
     #[test]

@@ -2,43 +2,75 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::effects::DesktopEffects;
+use super::notifications::AppNotification;
 use super::IpcBackend;
+use crate::update::UpdateInfo;
 
 #[derive(Default)]
 pub struct FakeEffects {
-    pub notifications: Rc<RefCell<Vec<(String, String)>>>,
+    pub notifications: Rc<RefCell<Vec<AppNotification>>>,
     pub copied: Rc<RefCell<Vec<String>>>,
     pub copy_ok: bool,
-    pub update_actions: Rc<RefCell<Vec<(String, String)>>>,
-    pub up_to_date: Rc<RefCell<Vec<String>>>,
-    pub update_check_failed: Rc<RefCell<Vec<String>>>,
 }
 
 impl DesktopEffects for FakeEffects {
-    fn notify(&self, summary: &str, body: &str) {
-        self.notifications
-            .borrow_mut()
-            .push((summary.to_string(), body.to_string()));
+    fn notify(&self, title: &str, body: &str) {
+        let id = format!("fake-{}", self.notifications.borrow().len());
+        self.notifications.borrow_mut().push(AppNotification {
+            id,
+            title: title.to_string(),
+            body: body.to_string(),
+            ephemeral: true,
+            auto_close_ms: Some(3000),
+            action_id: None,
+            action_label: None,
+            action_payload: None,
+        });
     }
 
-    fn notify_update_available(
-        &self,
-        current: &str,
-        latest: &str,
-        on_action: Box<dyn FnOnce() + Send>,
-    ) {
-        self.update_actions
-            .borrow_mut()
-            .push((current.to_string(), latest.to_string()));
-        on_action();
+    fn notify_update_available(&self, info: &UpdateInfo) {
+        let id = format!("fake-{}", self.notifications.borrow().len());
+        self.notifications.borrow_mut().push(AppNotification {
+            id,
+            title: "Update available".to_string(),
+            body: format!(
+                "Promptly can be upgraded from {} to {}",
+                info.current, info.latest
+            ),
+            ephemeral: false,
+            auto_close_ms: None,
+            action_id: Some("showUpdate".to_string()),
+            action_label: Some("View update".to_string()),
+            action_payload: None,
+        });
     }
 
     fn notify_up_to_date(&self, latest: &str) {
-        self.up_to_date.borrow_mut().push(latest.to_string());
+        let id = format!("fake-{}", self.notifications.borrow().len());
+        self.notifications.borrow_mut().push(AppNotification {
+            id,
+            title: "Promptly is up to date".to_string(),
+            body: format!("Promptly is already at the latest version: {latest}"),
+            ephemeral: true,
+            auto_close_ms: Some(3000),
+            action_id: None,
+            action_label: None,
+            action_payload: None,
+        });
     }
 
     fn notify_update_check_failed(&self, message: &str) {
-        self.update_check_failed.borrow_mut().push(message.to_string());
+        let id = format!("fake-{}", self.notifications.borrow().len());
+        self.notifications.borrow_mut().push(AppNotification {
+            id,
+            title: "Update check failed".to_string(),
+            body: message.to_string(),
+            ephemeral: true,
+            auto_close_ms: Some(3000),
+            action_id: None,
+            action_label: None,
+            action_payload: None,
+        });
     }
 
     fn copy_text(&self, text: &str) -> anyhow::Result<()> {

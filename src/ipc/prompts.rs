@@ -297,8 +297,8 @@ mod tests {
 
         let notifs = effects.notifications.borrow();
         assert_eq!(notifs.len(), 1);
-        assert_eq!(notifs[0].0, "Prompt Saved");
-        assert_eq!(notifs[0].1, "Saved template 'git'");
+        assert_eq!(notifs[0].title, "Prompt Saved");
+        assert_eq!(notifs[0].body, "Saved template 'git'");
     }
 
     #[test]
@@ -418,11 +418,12 @@ mod tests {
         let resp = handle(&backend, &effects, &raw);
         assert_eq!(effects.copied.borrow()[0], "Hello");
         assert_eq!(
-            effects.notifications.borrow()[0],
-            (
-                "Prompt copied".to_string(),
-                "'plain-copy' copied to clipboard".to_string()
-            )
+            effects.notifications.borrow()[0].title,
+            "Prompt copied".to_string(),
+        );
+        assert_eq!(
+            effects.notifications.borrow()[0].body,
+            "'plain-copy' copied to clipboard".to_string(),
         );
         assert_eq!(resp["data"]["copied"], true);
         assert_eq!(resp["data"]["historyInserted"], true);
@@ -442,11 +443,12 @@ mod tests {
         .to_string();
         handle(&backend, &effects, &raw);
         assert_eq!(
-            effects.notifications.borrow()[1],
-            (
-                "Prompt copied".to_string(),
-                "'with-vars' copied to clipboard!".to_string()
-            )
+            effects.notifications.borrow()[1].title,
+            "Prompt copied".to_string(),
+        );
+        assert_eq!(
+            effects.notifications.borrow()[1].body,
+            "'with-vars' copied to clipboard!".to_string(),
         );
 
         let raw = serde_json::json!({
@@ -529,8 +531,8 @@ mod tests {
         assert_eq!(del_resp["data"], true);
 
         let notifs = effects.notifications.borrow();
-        let delete_notif = notifs.iter().find(|(s, _)| s == "Prompt deleted").unwrap();
-        assert_eq!(delete_notif.1, "Deleted template 'to-delete'");
+        let delete_notif = notifs.iter().find(|n| n.title == "Prompt deleted").unwrap();
+        assert_eq!(delete_notif.body, "Deleted template 'to-delete'");
 
         let list = handle(&backend, &effects, r#"{"id":"x","command":"listPrompts"}"#);
         assert_eq!(list["data"].as_array().unwrap().len(), 0);

@@ -26,6 +26,9 @@ body {
   --panel-chrome-border: #ddd9d0;
   --panel-shadow-down: 0 2px 6px rgba(28, 27, 24, 0.07);
   --panel-shadow-up: 0 -2px 6px rgba(28, 27, 24, 0.07);
+  --notification-bg: #ddd8ce;
+  --notification-shadow: 0 6px 20px rgba(28, 27, 24, 0.22), 0 2px 8px rgba(28, 27, 24, 0.14);
+  --notification-stack-bottom: 38px;
   --input-border: #ddd9d0;
   --input-border-focus: #c7d3dd;
 }
@@ -948,4 +951,101 @@ button.danger {
   font-size: 10px;
   color: #6a6860;
   text-transform: capitalize;
+}
+
+/* ── In-app notification footer ─────────────────────────────────────── */
+.notification-stack {
+  position: fixed;
+  left: var(--pane-padding);
+  right: auto;
+  bottom: var(--notification-stack-bottom);
+  z-index: 20;
+  display: flex;
+  flex-direction: column-reverse;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 0;
+  pointer-events: none;
+}
+
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 150px;
+  width: 50vw;
+  max-width: 250px;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-chrome-border);
+  border-radius: 10px;
+  background-color: var(--notification-bg);
+  box-shadow: var(--notification-shadow);
+  pointer-events: auto;
+}
+
+.notification-item.ephemeral {
+  border-left: 3px solid #6b9e78;
+}
+
+.notification-item.persistent {
+  border-left: 3px solid #7a93b8;
+}
+
+.notification-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a1a1a;
+}
+
+.notification-body {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #4a4840;
+  line-height: 1.35;
+}
+
+.notification-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.notification-action-btn {
+  border: none;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  background-color: #a3b9c9;
+  color: #1a1a1a;
+}
+
+.notification-action-btn:hover {
+  background-color: #8fa7b9;
+}
+
+.notification-dismiss-btn {
+  border: none;
+  border-radius: 6px;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  background: transparent;
+  color: #5a5850;
+}
+
+.notification-dismiss-btn:hover {
+  background-color: #cfc9be;
+  color: #1a1a1a;
 }

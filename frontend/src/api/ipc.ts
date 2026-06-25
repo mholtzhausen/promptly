@@ -1,5 +1,6 @@
 import type { IpcResponse } from "../types";
 import type { UpdateDialogPayload } from "../components/UpdateView";
+import type { AppNotification } from "../types/notifications";
 
 declare global {
   interface Window {
@@ -9,6 +10,9 @@ declare global {
     __promptlyFocusSearch: () => void;
     __promptlyShowUpdateDialog: (payload: UpdateDialogPayload) => void;
     __promptlyShowAbout: () => void;
+    __promptlyPushNotifications: (notifications: AppNotification[]) => void;
+    __promptlyOnWindowVisible: () => void;
+    __promptlyOnWindowHidden: () => void;
   }
 }
 

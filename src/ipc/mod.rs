@@ -3,6 +3,7 @@
 mod effects;
 mod history;
 mod limits;
+mod notifications;
 mod prompts;
 mod response;
 mod types;
@@ -12,7 +13,8 @@ mod contract;
 #[cfg(test)]
 mod test_support;
 
-pub use effects::{DesktopEffects, RealDesktopEffects};
+pub use effects::DesktopEffects;
+pub use notifications::{AppNotification, NotificationCollector};
 pub use types::HandledIpc;
 
 use crate::db;
