@@ -15,6 +15,7 @@ A Linux desktop system-tray application that manages prompt templates with varia
 - **Prompt CRUD**: Create, edit, and delete templates from the UI.
 - **Window Config**: Window size persisted in `~/.config/promptly/config.yml`.
 - **Auto-background**: Daemonizes on launch unless `PROMPTLY_FOREGROUND=1`.
+- **Update checks**: On startup and via tray **Check for Updates**; desktop notification when a newer GitHub release is available, with an in-app changelog dialog and `promptly update`.
 
 ## Requirements
 
@@ -42,7 +43,7 @@ This installs:
 - `~/.config/autostart/promptly.desktop`
 - `~/.config/systemd/user/promptly.service`
 
-Enable autostart after install:
+Enable autostart after install (the install script prompts on an interactive TTY; `promptly update` enables the service automatically):
 
 ```bash
 systemctl --user enable --now promptly.service
@@ -86,9 +87,12 @@ Or use `./run.sh` (equivalent to `make run`).
 ```bash
 promptly --version              # print version
 promptly --show                 # show the prompt window (used by tray/hotkey path)
+promptly update                 # install latest release and restart the service
 promptly export [path]          # export prompts (+ history) to JSON
 promptly import <path>          # import prompts from JSON
 ```
+
+Optional environment variables for update checks and installs: `PROMPTLY_INSTALL_REPO` (default `mholtzhausen/promptly`), `GITHUB_TOKEN` (GitHub API rate limits), `PROMPTLY_MANAGE_SERVICE=1` (set automatically by `promptly update`).
 
 Set `PROMPTLY_DB_PATH` to override the default SQLite location. Set `RUST_LOG=promptly=debug` for verbose logging.
 

@@ -71,11 +71,53 @@ resolve_release_tag() {
     return
   fi
 
-  local release_json tag
+  local tag
+  tag="$(resolve_release_tag_redirect "$REPO" 2>/dev/null || true)"
+  if [[ -n "$tag" ]]; then
+    printf '%s\n' "$tag"
+    return
+  fi
+
+  tag="$(resolve_release_tag_atom "$REPO" 2>/dev/null || true)"
+  if [[ -n "$tag" ]]; then
+    printf '%s\n' "$tag"
+    return
+  fi
+
+  local release_json
   release_json="$(github_api releases/latest)"
   tag="$(printf '%s' "$release_json" | json_field tag_name)"
-  [[ -n "$tag" ]] || die "could not determine latest release tag from GitHub API"
+  [[ -n "$tag" ]] || die "could not determine latest release tag from GitHub"
   printf '%s\n' "$tag"
+}
+
+resolve_release_tag_redirect() {
+  local repo="$1"
+  local headers location tag
+  headers="$(curl -fsSI -A "promptly-install" "https://github.com/${repo}/releases/latest")"
+  location="$(printf '%s\n' "$headers" | awk 'tolower($1) == "location:" { print $2; exit }' | tr -d '\r')"
+  [[ -n "$location" ]] || return 1
+  case "$location" in
+    */releases/tag/*)
+      tag="${location##*/releases/tag/}"
+      tag="${tag%%\?*}"
+      tag="${tag%%#*}"
+      tag="${tag//%2B/+}"
+      printf '%s\n' "$tag"
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+resolve_release_tag_atom() {
+  local repo="$1"
+  local atom title
+  atom="$(curl -fsSL -A "promptly-install" "https://github.com/${repo}/releases.atom")"
+  title="$(printf '%s' "$atom" | sed -n '/<entry>/,/<\/entry>/p' | sed -n 's:.*<title>\([^<]*\)</title>.*:\1:p' | head -n1)"
+  [[ -n "$title" ]] || return 1
+  printf '%s\n' "$title"
 }
 
 download_release_asset() {
@@ -174,10 +216,49 @@ install_layout() {
     systemctl --user daemon-reload || true
   fi
 
+  manage_systemd_service
+
   printf '\n'
   printf 'Installed promptly %s to %s\n' "${tag}" "${bin_dir}/promptly"
-  printf 'Enable autostart: systemctl --user enable --now promptly.service\n'
+  if [[ "${PROMPTLY_MANAGE_SERVICE:-}" == "1" ]]; then
+    printf 'Systemd user service managed automatically.\n'
+  else
+    printf 'Enable autostart: systemctl --user enable --now promptly.service\n'
+  fi
   printf '\n'
+}
+
+manage_systemd_service() {
+  if ! command -v systemctl >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! systemctl --user show-environment >/dev/null 2>&1; then
+    return 0
+  fi
+
+  systemctl --user daemon-reload || true
+
+  if [[ "${PROMPTLY_MANAGE_SERVICE:-}" == "1" ]]; then
+    if systemctl --user is-active --quiet promptly.service 2>/dev/null; then
+      systemctl --user restart promptly.service
+    elif systemctl --user is-enabled --quiet promptly.service 2>/dev/null; then
+      systemctl --user start promptly.service
+    else
+      systemctl --user enable --now promptly.service
+    fi
+    return 0
+  fi
+
+  if [[ -t 0 ]]; then
+    printf 'Enable and start promptly.service for autostart? [y/N] '
+    local reply
+    IFS= read -r reply || reply=""
+    case "$reply" in
+      y | Y | yes | Yes | YES)
+        systemctl --user enable --now promptly.service
+        ;;
+    esac
+  fi
 }
 
 main() {

@@ -2,10 +2,13 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { api, copyPromptToClipboard } from "./api/commands";
 import { useHostBridge } from "./bridge/host";
 import { DeleteView } from "./components/DeleteView";
+import { AboutView } from "./components/AboutView";
 import { EditorView } from "./components/EditorView";
 import { HistoryDetailView } from "./components/HistoryDetailView";
 import { HistoryView } from "./components/HistoryView";
 import { ListView } from "./components/ListView";
+import { UpdateView } from "./components/UpdateView";
+import type { UpdateDialogPayload } from "./components/UpdateView";
 import { VariablesView } from "./components/VariablesView";
 import { useInterpolatePreview } from "./hooks/useInterpolatePreview";
 import {
@@ -43,6 +46,8 @@ export default function App() {
   const [historyDetailContent, setHistoryDetailContent] = useState("");
   const [pruneMenuOpen, setPruneMenuOpen] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [updateDialog, setUpdateDialog] = useState<UpdateDialogPayload | null>(null);
+  const [updateInProgress, setUpdateInProgress] = useState(false);
 
   const reportStatusError = useCallback((message: string) => {
     setStatusError(message);
@@ -89,7 +94,40 @@ export default function App() {
     focusSearch();
   }, [loadPrompts, focusSearch, clearStatusError]);
 
-  useHostBridge({ onShow, focusSearch });
+  const onShowUpdateDialog = useCallback((payload: UpdateDialogPayload) => {
+    setUpdateDialog(payload);
+    setUpdateInProgress(false);
+    setView("update");
+    clearStatusError();
+  }, [clearStatusError]);
+
+  const onShowAbout = useCallback(() => {
+    setView("about");
+    clearStatusError();
+  }, [clearStatusError]);
+
+  useHostBridge({ onShow, focusSearch, onShowUpdateDialog, onShowAbout });
+
+  const closeUpdate = useCallback(() => {
+    if (updateInProgress) return;
+    setUpdateDialog(null);
+    setView("list");
+  }, [updateInProgress]);
+
+  const closeAbout = useCallback(() => {
+    void api.hideWindow();
+  }, []);
+
+  const confirmUpdate = useCallback(async () => {
+    if (!updateDialog || updateInProgress) return;
+    setUpdateInProgress(true);
+    try {
+      await api.runUpdate();
+    } catch (err) {
+      setUpdateInProgress(false);
+      reportStatusError(err instanceof Error ? err.message : "Update failed");
+    }
+  }, [updateDialog, updateInProgress, reportStatusError]);
 
   useEffect(() => {
     void loadPrompts();
@@ -473,7 +511,8 @@ export default function App() {
       view !== "editor" &&
       view !== "variables" &&
       view !== "history" &&
-      view !== "historyDetail"
+      view !== "historyDetail" &&
+      view !== "about"
     ) {
       return;
     }
@@ -484,6 +523,7 @@ export default function App() {
       if (view === "editor") closeEditor();
       else if (view === "variables") void copyAndBackToList();
       else if (view === "history") closeHistory();
+      else if (view === "about") closeAbout();
       else closeHistoryDetail();
     };
     document.addEventListener("keydown", onKeyDown, true);
@@ -494,6 +534,7 @@ export default function App() {
     copyAndBackToList,
     closeHistory,
     closeHistoryDetail,
+    closeAbout,
   ]);
 
   const copyHistoryDetail = useCallback(async () => {
@@ -557,6 +598,23 @@ export default function App() {
         onConfirm={() => void confirmDelete()}
       />
     );
+  }
+
+  if (view === "update" && updateDialog) {
+    return (
+      <UpdateView
+        currentVersion={updateDialog.currentVersion}
+        latestVersion={updateDialog.latestVersion}
+        changelog={updateDialog.changelog}
+        updating={updateInProgress}
+        onClose={closeUpdate}
+        onConfirm={() => void confirmUpdate()}
+      />
+    );
+  }
+
+  if (view === "about") {
+    return <AboutView onClose={closeAbout} />;
   }
 
   if (view === "variables" && variablePrompt) {

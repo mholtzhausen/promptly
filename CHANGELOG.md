@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Startup and tray **Check for Updates** with desktop notifications and in-app changelog update dialog
+- `promptly update` CLI command to install the latest release via `scripts/install.sh`
+- Install script systemd user-service management (`PROMPTLY_MANAGE_SERVICE`, interactive TTY prompt)
+- Update checks resolve the latest release via GitHub redirect/Atom feed (no API token required); GitHub API is a fallback only
+
 ## [0.8.0+1] - 2026-06-25
 
 ### Added

@@ -23,8 +23,8 @@
 ```
 
 - **No async/await** — synchronous Tao event loop + blocking I/O. Hotkey and tray run in background threads; IPC and DB access run on the main thread.
-- **Hotkey detection**: On X11 uses `XGrabKey` (via `x11` crate) in a spawned `std::thread`. Falls back to `rdev::listen()` on Wayland (needs `input` group). Sends `()` through `mpsc` to the Tao event loop as `AppEvent::ToggleWindow`.
-- **System tray**: `ksni` crate (freedesktop StatusNotifierItem protocol). Lives in a background thread managed by the crate.
+- **Hotkey detection**: On X11 uses `XGrabKey` (via `x11` crate) in a spawned `std::thread`. Falls back to `rdev::listen()` on Wayland (needs `input` group). Sends `TrayAction::ToggleWindow` through `mpsc` to the Tao event loop.
+- **System tray**: `ksni` crate (freedesktop StatusNotifierItem protocol). Menu: Show, Check for Updates, Quit. Lives in a background thread managed by the crate.
 - **Frontend**: React SPA built with Vite (`vite-plugin-singlefile`) → single `frontend/dist/index.html` embedded via `include_str!` in the binary.
 - **IPC**: JSON request/response over Wry's `window.ipc.postMessage` / `evaluate_script` (`window.__promptlyReceive`).
 - **DB connection**: Single `rusqlite::Connection` held in `IpcBackend` (all IPC on main thread).
@@ -52,7 +52,8 @@
 | `src/prompt_parser.rs` | `<var />` parse + interpolate; legacy `{{...}}` migration |
 | `src/config.rs` | Paths, YAML window size config |
 | `src/window_focus.rs` | X11 centering, always-on-top, opacity |
-| `src/tray.rs` | ksni tray menu (Show / Quit) |
+| `src/tray.rs` | ksni tray menu (Show / Check for Updates / Quit) |
+| `src/update.rs` | GitHub release check, changelog fetch, `promptly update` install |
 | `frontend/src/App.tsx` | React UI (view router + screens) |
 
 ## Development Commands
@@ -69,7 +70,7 @@ make install-user     # ~/.local/bin + .desktop + systemd user unit
 make uninstall        # remove user-local install
 ```
 
-CLI: `promptly --version`, `promptly export [path]`, `promptly import <path>`.
+CLI: `promptly --version`, `promptly export [path]`, `promptly import <path>`, `promptly update`.
 Logs: `~/.local/state/promptly/promptly.log` when daemonized; `RUST_LOG=promptly=debug`.
 Single instance: flock on `~/.config/promptly/promptly.lock`.
 

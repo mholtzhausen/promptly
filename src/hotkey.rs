@@ -1,10 +1,12 @@
 //! Global hotkey registration: X11 XGrabKey with rdev fallback.
 
+use crate::tray::TrayAction;
+
 /// Register the global Ctrl+Alt+Space hotkey.
 ///
 /// On X11: uses `XGrabKey` (no special permissions needed).
 /// On Wayland/fallback: uses rdev evdev (requires `input` group membership).
-pub fn register_global_hotkey(tx: std::sync::mpsc::Sender<()>) {
+pub fn register_global_hotkey(tx: std::sync::mpsc::Sender<TrayAction>) {
     #[cfg(target_os = "linux")]
     {
         if register_x11_grab(&tx) {
@@ -18,7 +20,7 @@ pub fn register_global_hotkey(tx: std::sync::mpsc::Sender<()>) {
 
 /// Register Ctrl+Alt+Space via X11 `XGrabKey`. Returns true on success.
 #[cfg(target_os = "linux")]
-fn register_x11_grab(tx: &std::sync::mpsc::Sender<()>) -> bool {
+fn register_x11_grab(tx: &std::sync::mpsc::Sender<TrayAction>) -> bool {
     use std::os::raw::{c_int, c_uint};
     use x11::xlib;
 
@@ -75,7 +77,7 @@ fn register_x11_grab(tx: &std::sync::mpsc::Sender<()>) -> bool {
                     let state = event.key.state;
                     let got_keycode = event.key.keycode;
                     if got_keycode == want_keycode && (state & base_mods) == base_mods {
-                        let _ = tx_clone.send(());
+                        let _ = tx_clone.send(TrayAction::ToggleWindow);
                     }
                 }
             }
@@ -88,7 +90,7 @@ fn register_x11_grab(tx: &std::sync::mpsc::Sender<()>) -> bool {
 }
 
 /// Fallback hotkey registration using rdev evdev (needs `input` group on Linux).
-fn register_rdev_hotkey(tx: std::sync::mpsc::Sender<()>) {
+fn register_rdev_hotkey(tx: std::sync::mpsc::Sender<TrayAction>) {
     use rdev::{EventType, Key};
     use std::sync::{Arc, Mutex};
 
@@ -106,7 +108,7 @@ fn register_rdev_hotkey(tx: std::sync::mpsc::Sender<()>) {
                     Key::ControlLeft | Key::ControlRight => *cp.lock().unwrap() = true,
                     Key::Alt | Key::AltGr => *ap.lock().unwrap() = true,
                     Key::Space if *cp.lock().unwrap() && *ap.lock().unwrap() => {
-                        let _ = tx.send(());
+                        let _ = tx.send(TrayAction::ToggleWindow);
                     }
                     _ => {}
                 }

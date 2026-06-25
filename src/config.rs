@@ -9,6 +9,9 @@ pub const APP_NAME: &str = "promptly";
 pub const DEFAULT_WINDOW_WIDTH: f64 = 500.0;
 pub const DEFAULT_WINDOW_HEIGHT: f64 = 400.0;
 
+pub const ABOUT_WINDOW_WIDTH: f64 = 400.0;
+pub const ABOUT_WINDOW_HEIGHT: f64 = 480.0;
+
 const MIN_WINDOW_WIDTH: f64 = 320.0;
 const MIN_WINDOW_HEIGHT: f64 = 240.0;
 

@@ -9,6 +9,9 @@ pub struct FakeEffects {
     pub notifications: Rc<RefCell<Vec<(String, String)>>>,
     pub copied: Rc<RefCell<Vec<String>>>,
     pub copy_ok: bool,
+    pub update_actions: Rc<RefCell<Vec<(String, String)>>>,
+    pub up_to_date: Rc<RefCell<Vec<String>>>,
+    pub update_check_failed: Rc<RefCell<Vec<String>>>,
 }
 
 impl DesktopEffects for FakeEffects {
@@ -16,6 +19,26 @@ impl DesktopEffects for FakeEffects {
         self.notifications
             .borrow_mut()
             .push((summary.to_string(), body.to_string()));
+    }
+
+    fn notify_update_available(
+        &self,
+        current: &str,
+        latest: &str,
+        on_action: Box<dyn FnOnce() + Send>,
+    ) {
+        self.update_actions
+            .borrow_mut()
+            .push((current.to_string(), latest.to_string()));
+        on_action();
+    }
+
+    fn notify_up_to_date(&self, latest: &str) {
+        self.up_to_date.borrow_mut().push(latest.to_string());
+    }
+
+    fn notify_update_check_failed(&self, message: &str) {
+        self.update_check_failed.borrow_mut().push(message.to_string());
     }
 
     fn copy_text(&self, text: &str) -> anyhow::Result<()> {

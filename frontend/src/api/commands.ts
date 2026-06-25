@@ -57,6 +57,13 @@ export const api = {
   hideWindow: () => request<boolean>("hideWindow"),
 
   quit: () => request<boolean>("quit"),
+
+  runUpdate: () => request<boolean>("runUpdate"),
+
+  getAppInfo: () =>
+    request<{ version: string; description: string; features: string[] }>(
+      "getAppInfo",
+    ),
 };
 
 export type CopyPromptArgs = {

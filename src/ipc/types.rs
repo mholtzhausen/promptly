@@ -24,6 +24,8 @@ pub enum IpcCommand {
     SetWindowTitle(SetWindowTitlePayload),
     HideWindow,
     Quit,
+    RunUpdate,
+    GetAppInfo,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -147,5 +149,6 @@ pub struct HandledIpc {
     pub response_json: String,
     pub hide_window: bool,
     pub quit_app: bool,
+    pub run_update: bool,
     pub window_title: Option<String>,
 }

@@ -440,6 +440,69 @@ button.danger {
   font-size: 13px;
 }
 
+.update-changelog {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: #fff;
+}
+
+.update-changelog pre {
+  margin: 0;
+  padding: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.app.update-view {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app.about-view {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.about-version {
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+
+.about-description {
+  margin: 0 0 12px;
+  color: #4a4740;
+}
+
+.about-features {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.about-features h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.about-features ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.about-features li {
+  margin-bottom: 6px;
+}
+
 /* ── Variable fields ─────────────────────────────────────────────────── */
 .variables-body {
   flex: 1;

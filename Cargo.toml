@@ -23,6 +23,8 @@ notify-rust = "4"
 dirs-next = "2"
 x11 = "2.21"
 fs2 = "0.4"
+ureq = { version = "2.12", default-features = false, features = ["tls"] }
+libc = "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = "0.18.2"

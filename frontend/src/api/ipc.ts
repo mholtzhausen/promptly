@@ -1,4 +1,5 @@
 import type { IpcResponse } from "../types";
+import type { UpdateDialogPayload } from "../components/UpdateView";
 
 declare global {
   interface Window {
@@ -6,6 +7,8 @@ declare global {
     __promptlyReceive: (response: IpcResponse<unknown>) => void;
     __promptlyOnShow: () => void;
     __promptlyFocusSearch: () => void;
+    __promptlyShowUpdateDialog: (payload: UpdateDialogPayload) => void;
+    __promptlyShowAbout: () => void;
   }
 }
 

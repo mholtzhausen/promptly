@@ -8,7 +8,9 @@ export type View =
   | "delete"
   | "variables"
   | "history"
-  | "historyDetail";
+  | "historyDetail"
+  | "update"
+  | "about";
 
 export const PRUNE_KEEP_OPTIONS = [10, 100, 500, 1000] as const;
 
@@ -42,5 +44,9 @@ export function windowTitleForView(
       return ctx.deletingPrompt
         ? `${TITLE_PREFIX}Delete ${ctx.deletingPrompt.name}`
         : `${TITLE_PREFIX}Find a prompt`;
+    case "update":
+      return `${TITLE_PREFIX}Update available`;
+    case "about":
+      return `${TITLE_PREFIX}About`;
   }
 }

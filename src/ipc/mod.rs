@@ -40,18 +40,20 @@ impl IpcBackend {
                     response_json: invalid_request_json(),
                     hide_window: false,
                     quit_app: false,
+                    run_update: false,
                     window_title: None,
                 };
             }
         };
 
         let id = request.id.clone();
-        let (response, hide_window, quit_app, window_title) =
+        let (response, hide_window, quit_app, run_update, window_title) =
             self.dispatch(request.command, effects, &id);
         HandledIpc {
             response_json: response,
             hide_window,
             quit_app,
+            run_update,
             window_title,
         }
     }
@@ -61,55 +63,72 @@ impl IpcBackend {
         command: IpcCommand,
         effects: &impl DesktopEffects,
         id: &str,
-    ) -> (String, bool, bool, Option<String>) {
+    ) -> (String, bool, bool, bool, Option<String>) {
         match command {
             IpcCommand::ListPrompts => {
                 let (response, hide_window, quit_app) = self.cmd_list_prompts(id);
-                (response, hide_window, quit_app, None)
+                (response, hide_window, quit_app, false, None)
             }
             IpcCommand::SavePrompt(p) => {
                 let (response, hide_window, quit_app) = self.cmd_save_prompt(id, p, effects);
-                (response, hide_window, quit_app, None)
+                (response, hide_window, quit_app, false, None)
             }
             IpcCommand::DeletePrompt(p) => {
                 let (response, hide_window, quit_app) = self.cmd_delete_prompt(id, p, effects);
-                (response, hide_window, quit_app, None)
+                (response, hide_window, quit_app, false, None)
             }
             IpcCommand::VariablesForTemplate(p) => {
                 let (response, hide_window, quit_app) = self.cmd_variables(id, p);
-                (response, hide_window, quit_app, None)
+                (response, hide_window, quit_app, false, None)
             }
             IpcCommand::Interpolate(p) => {
                 let (response, hide_window, quit_app) = self.cmd_interpolate(id, p);
-                (response, hide_window, quit_app, None)
+                (response, hide_window, quit_app, false, None)
             }
             IpcCommand::CopyPrompt(p) => {
                 let (response, hide_window, quit_app) = self.cmd_copy_prompt(id, p, effects);
-                (response, hide_window, quit_app, None)
+                (response, hide_window, quit_app, false, None)
             }
             IpcCommand::ListHistory => {
                 let (response, hide_window, quit_app) = self.cmd_list_history(id);
-                (response, hide_window, quit_app, None)
+                (response, hide_window, quit_app, false, None)
             }
             IpcCommand::GetHistoryEntry(p) => {
                 let (response, hide_window, quit_app) = self.cmd_get_history_entry(id, p);
-                (response, hide_window, quit_app, None)
+                (response, hide_window, quit_app, false, None)
             }
             IpcCommand::UpdateHistoryEntry(p) => {
                 let (response, hide_window, quit_app) = self.cmd_update_history_entry(id, p);
-                (response, hide_window, quit_app, None)
+                (response, hide_window, quit_app, false, None)
             }
             IpcCommand::DeleteHistoryEntry(p) => {
                 let (response, hide_window, quit_app) = self.cmd_delete_history_entry(id, p);
-                (response, hide_window, quit_app, None)
+                (response, hide_window, quit_app, false, None)
             }
             IpcCommand::PruneHistory(p) => {
                 let (response, hide_window, quit_app) = self.cmd_prune_history(id, p);
-                (response, hide_window, quit_app, None)
+                (response, hide_window, quit_app, false, None)
             }
-            IpcCommand::SetWindowTitle(p) => self.cmd_set_window_title(id, p),
-            IpcCommand::HideWindow => self.cmd_hide_window(id),
-            IpcCommand::Quit => self.cmd_quit(id),
+            IpcCommand::SetWindowTitle(p) => {
+                let (response, hide_window, quit_app, title) = self.cmd_set_window_title(id, p);
+                (response, hide_window, quit_app, false, title)
+            }
+            IpcCommand::HideWindow => {
+                let (response, hide_window, quit_app) = self.cmd_hide_window(id);
+                (response, hide_window, quit_app, false, None)
+            }
+            IpcCommand::Quit => {
+                let (response, hide_window, quit_app) = self.cmd_quit(id);
+                (response, hide_window, quit_app, false, None)
+            }
+            IpcCommand::RunUpdate => {
+                let (response, hide_window, quit_app) = self.cmd_run_update(id);
+                (response, hide_window, quit_app, true, None)
+            }
+            IpcCommand::GetAppInfo => {
+                let (response, hide_window, quit_app) = self.cmd_get_app_info(id);
+                (response, hide_window, quit_app, false, None)
+            }
         }
     }
 
@@ -121,12 +140,20 @@ impl IpcBackend {
         (ok_json(id, true), false, false, Some(p.title))
     }
 
-    fn cmd_hide_window(&self, id: &str) -> (String, bool, bool, Option<String>) {
-        (ok_json(id, true), true, false, None)
+    fn cmd_hide_window(&self, id: &str) -> (String, bool, bool) {
+        (ok_json(id, true), true, false)
     }
 
-    fn cmd_quit(&self, id: &str) -> (String, bool, bool, Option<String>) {
-        (ok_json(id, true), false, true, None)
+    fn cmd_quit(&self, id: &str) -> (String, bool, bool) {
+        (ok_json(id, true), false, true)
+    }
+
+    fn cmd_run_update(&self, id: &str) -> (String, bool, bool) {
+        (ok_json(id, true), false, false)
+    }
+
+    fn cmd_get_app_info(&self, id: &str) -> (String, bool, bool) {
+        (ok_json(id, crate::about::app_info()), false, false)
     }
 
     fn with_conn<F, T>(&self, f: F) -> anyhow::Result<T>
@@ -168,6 +195,15 @@ mod tests {
         let effects = FakeEffects::default();
         let handled = handle_raw(&backend, &effects, r#"{"id":"h","command":"hideWindow"}"#);
         assert!(handled.hide_window);
+        assert!(!handled.quit_app);
+    }
+
+    #[test]
+    fn run_update_sets_run_update_flag() {
+        let (backend, _f) = test_backend();
+        let effects = FakeEffects::default();
+        let handled = handle_raw(&backend, &effects, r#"{"id":"u","command":"runUpdate"}"#);
+        assert!(handled.run_update);
         assert!(!handled.quit_app);
     }
 

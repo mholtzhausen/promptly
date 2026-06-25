@@ -4,7 +4,7 @@
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, WindowSize, ABOUT_WINDOW_HEIGHT, ABOUT_WINDOW_WIDTH};
 
 use tao::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use tao::event::{Event, StartCause, WindowEvent};
@@ -12,8 +12,9 @@ use tao::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
 use tao::window::WindowBuilder;
 use wry::WebViewBuilder;
 
-use crate::ipc::{IpcBackend, RealDesktopEffects};
+use crate::ipc::{DesktopEffects, IpcBackend, RealDesktopEffects};
 use crate::tray::TrayState;
+use crate::update::{UpdateCheckOutcome, UpdateInfo};
 use crate::window_focus;
 
 /// User events delivered to the Tao event loop.
@@ -25,6 +26,29 @@ pub enum AppEvent {
     Ipc(String),
     /// Map the window after geometry has been applied while still hidden.
     RevealWindow,
+    /// Check GitHub for a newer release.
+    CheckForUpdates { user_initiated: bool },
+    /// Result of a background update check.
+    UpdateCheckResult {
+        outcome: Result<UpdateCheckOutcome, String>,
+        user_initiated: bool,
+    },
+    /// Open the in-app update dialog (notification action or direct).
+    ShowUpdateDialog(UpdateInfo),
+    /// Open the fixed-size About pane.
+    ShowAbout,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WindowPane {
+    Main,
+    About,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShowIntent {
+    Main,
+    About,
 }
 
 /// The Promptly webview application: window + webview + backend + tray.
@@ -38,6 +62,8 @@ pub struct PromptlyWebviewApp {
     focus_pending: Cell<bool>,
     /// True until the frontend on-show hook has run for this show cycle.
     on_show_pending: Cell<bool>,
+    show_intent: Cell<Option<ShowIntent>>,
+    window_pane: Cell<WindowPane>,
     app_config: RefCell<AppConfig>,
 }
 
@@ -105,6 +131,8 @@ impl PromptlyWebviewApp {
             event_proxy: proxy,
             focus_pending: Cell::new(false),
             on_show_pending: Cell::new(false),
+            show_intent: Cell::new(None),
+            window_pane: Cell::new(WindowPane::Main),
             app_config: RefCell::new(app_config),
         })
     }
@@ -116,16 +144,32 @@ impl PromptlyWebviewApp {
         show_on_start: bool,
     ) -> ! {
         let mut show_on_start = show_on_start;
+        let mut startup_update_check = true;
         event_loop.run(move |event, _target, control_flow| {
             *control_flow = ControlFlow::Wait;
             if show_on_start && matches!(&event, Event::NewEvents(StartCause::Init)) {
                 show_on_start = false;
                 state.show_window();
             }
+            if startup_update_check && matches!(&event, Event::NewEvents(StartCause::Init)) {
+                startup_update_check = false;
+                state.spawn_update_check(false);
+            }
             match event {
                 Event::UserEvent(AppEvent::ToggleWindow) => state.toggle_window(),
                 Event::UserEvent(AppEvent::RevealWindow) => state.reveal_window(),
                 Event::UserEvent(AppEvent::Ipc(raw)) => state.handle_ipc(&raw),
+                Event::UserEvent(AppEvent::CheckForUpdates { user_initiated }) => {
+                    state.spawn_update_check(user_initiated);
+                }
+                Event::UserEvent(AppEvent::UpdateCheckResult {
+                    outcome,
+                    user_initiated,
+                }) => state.handle_update_check_result(outcome, user_initiated),
+                Event::UserEvent(AppEvent::ShowUpdateDialog(info)) => {
+                    state.show_update_dialog(&info);
+                }
+                Event::UserEvent(AppEvent::ShowAbout) => state.show_about_pane(),
                 Event::WindowEvent {
                     event: WindowEvent::Focused(true),
                     window_id,
@@ -134,7 +178,7 @@ impl PromptlyWebviewApp {
                 Event::WindowEvent {
                     event: WindowEvent::CloseRequested,
                     ..
-                } => state.window.set_visible(false),
+                } => state.hide_window(),
                 Event::WindowEvent {
                     event: WindowEvent::Resized(_),
                     window_id,
@@ -147,11 +191,47 @@ impl PromptlyWebviewApp {
 
     fn toggle_window(&self) {
         if self.window.is_visible() {
-            window_focus::set_window_opacity(&self.window, 1.0);
-            self.window.set_visible(false);
+            self.hide_window();
         } else {
             self.show_window();
         }
+    }
+
+    fn about_window_size() -> WindowSize {
+        WindowSize {
+            width: ABOUT_WINDOW_WIDTH,
+            height: ABOUT_WINDOW_HEIGHT,
+        }
+    }
+
+    fn pane_window_size(&self, pane: WindowPane) -> WindowSize {
+        match pane {
+            WindowPane::Main => self.app_config.borrow().window_size(),
+            WindowPane::About => Self::about_window_size(),
+        }
+    }
+
+    fn apply_geometry(&self, window_size: WindowSize) {
+        self.window
+            .set_inner_size(LogicalSize::new(window_size.width, window_size.height));
+        if let Some(pos) = self.centered_position(window_size) {
+            self.window.set_outer_position(pos);
+            window_focus::x11_move_window(&self.window, pos);
+        }
+    }
+
+    fn restore_main_geometry(&self) {
+        if self.window_pane.get() == WindowPane::Main {
+            return;
+        }
+        self.window_pane.set(WindowPane::Main);
+        self.apply_geometry(self.app_config.borrow().window_size());
+    }
+
+    fn hide_window(&self) {
+        window_focus::set_window_opacity(&self.window, 1.0);
+        self.restore_main_geometry();
+        self.window.set_visible(false);
     }
 
     fn centered_position(
@@ -175,21 +255,24 @@ impl PromptlyWebviewApp {
         Some(PhysicalPosition::new(cx, cy))
     }
 
-    fn apply_centered_geometry(&self) {
-        let window_size = self.app_config.borrow().window_size();
-        self.window
-            .set_inner_size(LogicalSize::new(window_size.width, window_size.height));
-        if let Some(pos) = self.centered_position(window_size) {
-            self.window.set_outer_position(pos);
-            window_focus::x11_move_window(&self.window, pos);
-        }
-    }
-
     /// Position the hidden window, then defer mapping to the next event-loop tick.
     fn show_window(&self) {
-        self.apply_centered_geometry();
+        self.window_pane.set(WindowPane::Main);
+        self.apply_geometry(self.pane_window_size(WindowPane::Main));
         self.focus_pending.set(true);
         self.on_show_pending.set(true);
+        self.show_intent.set(Some(ShowIntent::Main));
+        self.window.set_always_on_top(true);
+        window_focus::set_window_opacity(&self.window, 0.0);
+        let _ = self.event_proxy.send_event(AppEvent::RevealWindow);
+    }
+
+    fn show_about_pane(&self) {
+        self.window_pane.set(WindowPane::About);
+        self.apply_geometry(self.pane_window_size(WindowPane::About));
+        self.focus_pending.set(true);
+        self.on_show_pending.set(true);
+        self.show_intent.set(Some(ShowIntent::About));
         self.window.set_always_on_top(true);
         window_focus::set_window_opacity(&self.window, 0.0);
         let _ = self.event_proxy.send_event(AppEvent::RevealWindow);
@@ -219,6 +302,9 @@ impl PromptlyWebviewApp {
     }
 
     fn on_window_resized(&self) {
+        if self.window_pane.get() != WindowPane::Main {
+            return;
+        }
         let physical = self.window.inner_size();
         let scale = self.window.scale_factor();
         let width = physical.width as f64 / scale;
@@ -241,7 +327,11 @@ impl PromptlyWebviewApp {
         if !self.on_show_pending.take() {
             return;
         }
-        self.notify_frontend_show();
+        match self.show_intent.take() {
+            Some(ShowIntent::Main) => self.notify_frontend_show(),
+            Some(ShowIntent::About) => self.notify_frontend_about(),
+            None => {}
+        }
     }
 
     fn focus_webview(&self) {
@@ -256,6 +346,89 @@ impl PromptlyWebviewApp {
             .evaluate_script("window.__promptlyOnShow && window.__promptlyOnShow();");
     }
 
+    fn notify_frontend_about(&self) {
+        let _ = self
+            .webview
+            .evaluate_script("window.__promptlyShowAbout && window.__promptlyShowAbout();");
+    }
+
+    fn spawn_update_check(&self, user_initiated: bool) {
+        let proxy = self.event_proxy.clone();
+        std::thread::spawn(move || {
+            let outcome = crate::update::check_for_updates().map_err(|e| e.to_string());
+            if let Err(e) = proxy.send_event(AppEvent::UpdateCheckResult {
+                outcome: outcome.clone(),
+                user_initiated,
+            }) {
+                log::error!("Failed to post update check result to event loop: {e}");
+                if user_initiated {
+                    Self::deliver_update_check_notifications(
+                        outcome,
+                        true,
+                        proxy,
+                    );
+                }
+            }
+        });
+    }
+
+    fn handle_update_check_result(
+        &self,
+        outcome: Result<UpdateCheckOutcome, String>,
+        user_initiated: bool,
+    ) {
+        // Runs on the main/event-loop thread (same context as the working copy
+        // notifications). Deliver synchronously instead of deferring through a
+        // glib idle source so the notification is shown reliably.
+        Self::deliver_update_check_notifications(outcome, user_initiated, self.event_proxy.clone());
+    }
+
+    fn deliver_update_check_notifications(
+        outcome: Result<UpdateCheckOutcome, String>,
+        user_initiated: bool,
+        event_proxy: EventLoopProxy<AppEvent>,
+    ) {
+        let effects = RealDesktopEffects;
+        match outcome {
+            Ok(UpdateCheckOutcome::UpdateAvailable(info)) => {
+                let current = info.current.clone();
+                let latest = info.latest.clone();
+                effects.notify_update_available(
+                    &current,
+                    &latest,
+                    Box::new(move || {
+                        let _ = event_proxy.send_event(AppEvent::ShowUpdateDialog(info));
+                    }),
+                );
+            }
+            Ok(UpdateCheckOutcome::UpToDate { latest, .. }) => {
+                if user_initiated {
+                    effects.notify_up_to_date(&latest);
+                }
+            }
+            Err(e) => {
+                log::warn!("Update check failed: {e}");
+                if user_initiated {
+                    effects.notify_update_check_failed(&e);
+                }
+            }
+        }
+    }
+
+    fn show_update_dialog(&self, info: &UpdateInfo) {
+        self.show_window();
+        let payload = serde_json::json!({
+            "currentVersion": info.current,
+            "latestVersion": info.latest,
+            "changelog": info.changelog,
+        });
+        let script = format!(
+            "window.__promptlyShowUpdateDialog && window.__promptlyShowUpdateDialog({});",
+            payload
+        );
+        let _ = self.webview.evaluate_script(&script);
+    }
+
     fn handle_ipc(&self, raw: &str) {
         let handled = self.backend.handle(raw, &RealDesktopEffects);
         let _ = self.webview.evaluate_script(&format!(
@@ -266,7 +439,14 @@ impl PromptlyWebviewApp {
             self.window.set_title(&title);
         }
         if handled.hide_window {
-            self.window.set_visible(false);
+            self.hide_window();
+        }
+        if handled.run_update {
+            std::thread::spawn(|| {
+                if let Err(e) = crate::update::run_update() {
+                    log::error!("Update failed: {e:#}");
+                }
+            });
         }
         if handled.quit_app {
             std::process::exit(0);

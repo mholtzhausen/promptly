@@ -1,5 +1,6 @@
 //! Promptly — system-tray app for managing prompt templates.
 
+mod about;
 mod cli;
 mod config;
 mod db;
@@ -9,6 +10,7 @@ mod ipc;
 mod logging;
 mod prompt_parser;
 mod tray;
+mod update;
 mod webview_app;
 mod window_focus;
 
@@ -20,6 +22,7 @@ enum CliAction {
     Version,
     Export { output: std::path::PathBuf },
     Import { input: std::path::PathBuf },
+    Update,
     Run { show_on_start: bool },
 }
 
@@ -51,6 +54,7 @@ fn parse_cli() -> CliAction {
                 .unwrap_or_else(|| config::config_dir().join("prompts-export.json"));
             CliAction::Import { input }
         }
+        "update" => CliAction::Update,
         _ => {
             let show_on_start = args.iter().any(|a| a == "--show" || a == "-s");
             CliAction::Run { show_on_start }
@@ -90,14 +94,23 @@ fn run_gui(show_on_start: bool) -> Result<()> {
         tao::event_loop::EventLoopBuilder::<webview_app::AppEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
 
-    let (toggle_tx, toggle_rx) = std::sync::mpsc::channel::<()>();
+    let (toggle_tx, toggle_rx) = std::sync::mpsc::channel::<tray::TrayAction>();
     let tray_state = tray::TrayState::build(toggle_tx.clone())?;
     hotkey::register_global_hotkey(toggle_tx.clone());
 
     let toggle_proxy = proxy.clone();
     std::thread::spawn(move || {
-        while toggle_rx.recv().is_ok() {
-            let _ = toggle_proxy.send_event(webview_app::AppEvent::ToggleWindow);
+        while let Ok(action) = toggle_rx.recv() {
+            let event = match action {
+                tray::TrayAction::ToggleWindow => webview_app::AppEvent::ToggleWindow,
+                tray::TrayAction::CheckForUpdates => {
+                    webview_app::AppEvent::CheckForUpdates {
+                        user_initiated: true,
+                    }
+                }
+                tray::TrayAction::ShowAbout => webview_app::AppEvent::ShowAbout,
+            };
+            let _ = toggle_proxy.send_event(event);
         }
     });
 
@@ -126,6 +139,11 @@ fn main() -> Result<()> {
             logging::init_logging()?;
             let count = cli::import_prompts(&input).context("import failed")?;
             println!("Imported {count} prompt(s) from {}", input.display());
+            Ok(())
+        }
+        CliAction::Update => {
+            logging::init_logging()?;
+            update::run_update().context("update failed")?;
             Ok(())
         }
         CliAction::Run { show_on_start } => run_gui(show_on_start),
