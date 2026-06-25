@@ -18,10 +18,43 @@ A Linux desktop system-tray application that manages prompt templates with varia
 
 ## Requirements
 
+**To install a release** (curl script below): Linux x86_64 and WebKitGTK runtime libraries (`libwebkit2gtk-4.1-0`, GTK4).
+
+**To build from source**:
+
 - Rust (2021 edition)
 - Node.js ^20.19 or >=22.12
 - WebKitGTK (via Wry on Linux; `libwebkit2gtk-4.1-dev` and GTK4 dev packages)
 - SQLite3 (bundled via `rusqlite`)
+
+## Install
+
+On Linux x86_64, install or update the latest release to `~/.local` (same layout as `make install-user`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mholtzhausen/promptly/main/scripts/install.sh | bash
+```
+
+This installs:
+
+- `~/.local/bin/promptly`
+- `~/.local/share/applications/promptly.desktop`
+- `~/.config/autostart/promptly.desktop`
+- `~/.config/systemd/user/promptly.service`
+
+Enable autostart after install:
+
+```bash
+systemctl --user enable --now promptly.service
+```
+
+Pin a specific release:
+
+```bash
+PROMPTLY_VERSION=v0.8.0 curl -fsSL https://raw.githubusercontent.com/mholtzhausen/promptly/main/scripts/install.sh | bash
+```
+
+To remove a user-local install: `make uninstall` (from a source checkout) or delete the files listed above manually.
 
 ## How to Run
 
