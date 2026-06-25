@@ -29,10 +29,14 @@ export function EditorView({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== "Insert" || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (document.querySelector(".var-edit-popover")) return;
+      if (e.key !== "Insert" || e.altKey || e.metaKey) return;
+      if (document.querySelector(".var-edit-popover, .var-picker-popover")) return;
       e.preventDefault();
-      templateEditorRef.current?.insertVariable();
+      if (e.ctrlKey) {
+        templateEditorRef.current?.insertExistingVariable();
+      } else {
+        templateEditorRef.current?.insertVariable();
+      }
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
@@ -80,10 +84,17 @@ export function EditorView({
             type="button"
             onMouseDown={(e) => {
               e.preventDefault();
-              templateEditorRef.current?.insertVariable();
+              if (e.ctrlKey) {
+                const rect = e.currentTarget.getBoundingClientRect();
+                templateEditorRef.current?.insertExistingVariable(rect);
+              } else {
+                templateEditorRef.current?.insertVariable();
+              }
             }}
           >
-            Insert Variable <kbd className="btn-kbd">Ins</kbd>
+            Insert Variable{" "}
+            <kbd className="btn-kbd">Ins</kbd>{" "}
+            <kbd className="btn-kbd">Ctrl+Ins</kbd>
           </button>
           <button type="button" onClick={onClose}>
             Cancel

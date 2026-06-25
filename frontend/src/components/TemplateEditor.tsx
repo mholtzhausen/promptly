@@ -10,11 +10,14 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { EditorView } from "@codemirror/view";
 import { createVarDecorationsExtension } from "../editor/varDecorations";
 import { VarEditPopover } from "./VarEditPopover";
+import { VarPickerPopover } from "./VarPickerPopover";
 import {
   defaultVarAttrs,
   nextVarName,
   parseVarTag,
+  replaceAllVarsWithName,
   serializeVar,
+  uniqueVarsByName,
   type VarAttrs,
 } from "../lib/templateVars";
 
@@ -33,6 +36,7 @@ function rectFromPos(view: EditorView, pos: number): DOMRect {
 
 export type TemplateEditorHandle = {
   insertVariable: () => void;
+  insertExistingVariable: (anchorRect?: DOMRect) => void;
 };
 
 type TemplateEditorProps = {
@@ -44,6 +48,11 @@ type EditState = {
   from: number;
   to: number;
   attrs: VarAttrs;
+  originalName: string;
+  anchorRect: DOMRect;
+};
+
+type PickerState = {
   anchorRect: DOMRect;
 };
 
@@ -52,6 +61,7 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
     const editorRef = useRef<ReactCodeMirrorRef>(null);
     const lastCursorPos = useRef(0);
     const [editState, setEditState] = useState<EditState | null>(null);
+    const [pickerState, setPickerState] = useState<PickerState | null>(null);
     const onChangeRef = useRef(onChange);
     onChangeRef.current = onChange;
 
@@ -62,7 +72,13 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
         const raw = view.state.doc.sliceString(from, to);
         const parsed = parseVarTag(raw);
         const attrs = parsed ?? defaultVarAttrs("");
-        setEditState({ from, to, attrs, anchorRect });
+        setEditState({
+          from,
+          to,
+          attrs,
+          originalName: attrs.name,
+          anchorRect,
+        });
       },
       [],
     );
@@ -128,6 +144,22 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
       onChangeRef.current(view.state.doc.toString());
     }, []);
 
+    const insertAtCursor = useCallback((tag: string) => {
+      const view = editorRef.current?.view;
+      if (!view) return;
+      const pos = view.hasFocus
+        ? view.state.selection.main.head
+        : lastCursorPos.current;
+      const insertTo = pos + tag.length;
+      view.dispatch({
+        changes: { from: pos, insert: tag },
+        selection: { anchor: insertTo },
+      });
+      lastCursorPos.current = insertTo;
+      onChangeRef.current(view.state.doc.toString());
+      view.focus();
+    }, []);
+
     const insertVariable = useCallback(() => {
       const view = editorRef.current?.view;
       if (!view) return;
@@ -151,7 +183,29 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
       });
     }, [openEditor]);
 
-    useImperativeHandle(ref, () => ({ insertVariable }), [insertVariable]);
+    const insertExistingVariable = useCallback((anchorRect?: DOMRect) => {
+      const view = editorRef.current?.view;
+      if (!view) return;
+      const pos = view.hasFocus
+        ? view.state.selection.main.head
+        : lastCursorPos.current;
+      const rect = anchorRect ?? rectFromPos(view, pos);
+      setPickerState({ anchorRect: rect });
+    }, []);
+
+    const insertExistingVarTag = useCallback(
+      (attrs: VarAttrs) => {
+        insertAtCursor(serializeVar(attrs));
+        setPickerState(null);
+      },
+      [insertAtCursor],
+    );
+
+    useImperativeHandle(
+      ref,
+      () => ({ insertVariable, insertExistingVariable }),
+      [insertVariable, insertExistingVariable],
+    );
 
     return (
       <div className="template-editor">
@@ -183,9 +237,47 @@ export const TemplateEditor = forwardRef<TemplateEditorHandle, TemplateEditorPro
               setEditState(null);
             }}
             onDone={(attrs) => {
-              applyChange(editState.from, editState.to, serializeVar(attrs));
+              const trimmedName = attrs.name.trim();
+              const finalAttrs = { ...attrs, name: trimmedName };
+              const view = editorRef.current?.view;
+              if (!view) {
+                setEditState(null);
+                return;
+              }
+              if (trimmedName === editState.originalName) {
+                const content = view.state.doc.toString();
+                const updated = replaceAllVarsWithName(
+                  content,
+                  editState.originalName,
+                  finalAttrs,
+                );
+                view.dispatch({
+                  changes: {
+                    from: 0,
+                    to: content.length,
+                    insert: updated,
+                  },
+                });
+                onChangeRef.current(updated);
+              } else {
+                applyChange(
+                  editState.from,
+                  editState.to,
+                  serializeVar(finalAttrs),
+                );
+              }
               setEditState(null);
             }}
+          />
+        )}
+        {pickerState && (
+          <VarPickerPopover
+            variables={uniqueVarsByName(
+              editorRef.current?.view?.state.doc.toString() ?? value,
+            )}
+            anchorRect={pickerState.anchorRect}
+            onClose={() => setPickerState(null)}
+            onSelect={insertExistingVarTag}
           />
         )}
       </div>

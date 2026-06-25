@@ -142,3 +142,34 @@ export function defaultVarAttrs(name: string): VarAttrs {
     options: "",
   };
 }
+
+/** First valid declaration per variable name, in document order. */
+export function uniqueVarsByName(content: string): VarAttrs[] {
+  const seen = new Set<string>();
+  const result: VarAttrs[] = [];
+  for (const range of findVarTags(content)) {
+    const name = range.attrs?.name;
+    if (range.valid && name && !seen.has(name)) {
+      seen.add(name);
+      result.push(range.attrs!);
+    }
+  }
+  return result;
+}
+
+/** Replace every valid tag with the given name (end → start to preserve offsets). */
+export function replaceAllVarsWithName(
+  content: string,
+  name: string,
+  attrs: VarAttrs,
+): string {
+  const tag = serializeVar(attrs);
+  const ranges = findVarTags(content)
+    .filter((r) => r.valid && r.attrs?.name === name)
+    .sort((a, b) => b.from - a.from);
+  let result = content;
+  for (const r of ranges) {
+    result = result.slice(0, r.from) + tag + result.slice(r.to);
+  }
+  return result;
+}

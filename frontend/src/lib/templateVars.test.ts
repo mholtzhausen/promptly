@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   findVarTags,
   parseVarTag,
+  replaceAllVarsWithName,
   serializeVar,
+  uniqueVarsByName,
   varChipLabel,
   nextVarName,
 } from "./templateVars";
@@ -62,5 +64,30 @@ describe("templateVars", () => {
   it("nextVarName increments", () => {
     const content = `<var name="var1" type="text" /> foo <var name="var2" type="text" />`;
     expect(nextVarName(content)).toBe("var3");
+  });
+
+  it("uniqueVarsByName deduplicates by name", () => {
+    const content = `<var name="a" type="text" label="A" /> mid <var name="b" type="number" /> <var name="a" type="text" label="other" />`;
+    const unique = uniqueVarsByName(content);
+    expect(unique).toHaveLength(2);
+    expect(unique[0]!.name).toBe("a");
+    expect(unique[0]!.label).toBe("A");
+    expect(unique[1]!.name).toBe("b");
+  });
+
+  it("replaceAllVarsWithName syncs every reference", () => {
+    const content = `Hi <var name="n" type="text" value="old" /> and <var name="n" type="text" value="stale" />`;
+    const updated = replaceAllVarsWithName(content, "n", {
+      name: "n",
+      type: "text",
+      value: "new",
+      label: "Name",
+      placeholder: "",
+      options: "",
+    });
+    const tags = findVarTags(updated);
+    expect(tags).toHaveLength(2);
+    expect(tags.every((t) => t.attrs?.value === "new")).toBe(true);
+    expect(tags.every((t) => t.attrs?.label === "Name")).toBe(true);
   });
 });
