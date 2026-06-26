@@ -26,6 +26,9 @@ pub enum IpcCommand {
     Quit,
     RunUpdate,
     GetAppInfo,
+    GetCopySettings,
+    SetLastCopyTarget(CopyTargetNamePayload),
+    OpenCopyTarget(CopyTargetNamePayload),
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -110,6 +113,26 @@ pub struct SetWindowTitlePayload {
 pub enum CopyMessageKind {
     NoVariables,
     Variables,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyTargetNamePayload {
+    pub name: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopyTargetDto {
+    pub name: String,
+    pub url: String,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CopySettingsResult {
+    pub targets: Vec<CopyTargetDto>,
+    pub last_target: String,
 }
 
 #[derive(Debug, serde::Serialize)]

@@ -83,6 +83,16 @@ export interface PruneHistoryPayload {
   keep: number;
 }
 
+export interface CopyTarget {
+  name: string;
+  url: string;
+}
+
+export interface CopySettings {
+  targets: CopyTarget[];
+  lastTarget: string;
+}
+
 export interface SavePromptResult {
   saved: boolean;
   prompt: Prompt | null;

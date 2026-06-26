@@ -1,5 +1,6 @@
 //! Configuration: paths, constants, and design tokens.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,7 @@ pub const APP_NAME: &str = "promptly";
 pub const DEFAULT_WINDOW_WIDTH: f64 = 500.0;
 pub const DEFAULT_WINDOW_HEIGHT: f64 = 400.0;
 pub const DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS: u64 = 3;
+pub const DEFAULT_LAST_COPY_TARGET: &str = "claude";
 
 pub const ABOUT_WINDOW_WIDTH: f64 = 400.0;
 pub const ABOUT_WINDOW_HEIGHT: f64 = 480.0;
@@ -82,12 +84,33 @@ fn default_ephemeral_notification_seconds() -> u64 {
     DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS
 }
 
+pub fn default_copy_targets() -> HashMap<String, String> {
+    HashMap::from([
+        (
+            "claude".to_string(),
+            "https://claude.ai/new".to_string(),
+        ),
+        (
+            "gemini".to_string(),
+            "https://gemini.google.com/app".to_string(),
+        ),
+    ])
+}
+
+fn default_last_copy_target() -> String {
+    DEFAULT_LAST_COPY_TARGET.to_string()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub window: Option<WindowSize>,
     #[serde(default = "default_ephemeral_notification_seconds")]
     pub ephemeral_notification_seconds: u64,
+    #[serde(default = "default_copy_targets")]
+    pub copy_targets: HashMap<String, String>,
+    #[serde(default = "default_last_copy_target")]
+    pub last_copy_target: String,
 }
 
 impl Default for AppConfig {
@@ -95,6 +118,8 @@ impl Default for AppConfig {
         Self {
             window: None,
             ephemeral_notification_seconds: DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS,
+            copy_targets: default_copy_targets(),
+            last_copy_target: default_last_copy_target(),
         }
     }
 }
@@ -134,6 +159,44 @@ impl AppConfig {
     pub fn ephemeral_notification_ms(&self) -> u64 {
         self.ephemeral_notification_seconds.saturating_mul(1000)
     }
+
+    pub fn effective_copy_targets(&self) -> HashMap<String, String> {
+        if self.copy_targets.is_empty() {
+            return default_copy_targets();
+        }
+        self.copy_targets.clone()
+    }
+
+    pub fn resolved_last_copy_target(&self) -> String {
+        let targets = self.effective_copy_targets();
+        if targets.contains_key(&self.last_copy_target) {
+            return self.last_copy_target.clone();
+        }
+        let mut names: Vec<&String> = targets.keys().collect();
+        names.sort();
+        names
+            .first()
+            .map(|name| (*name).clone())
+            .unwrap_or_else(|| DEFAULT_LAST_COPY_TARGET.to_string())
+    }
+
+    pub fn set_last_copy_target(&mut self, name: &str) -> Result<(), String> {
+        if !self.effective_copy_targets().contains_key(name) {
+            return Err(format!("Unknown copy target: {name}"));
+        }
+        self.last_copy_target = name.to_string();
+        Ok(())
+    }
+
+    pub fn url_for_copy_target(&self, name: &str) -> Option<String> {
+        self.effective_copy_targets().get(name).cloned()
+    }
+
+    pub fn sorted_copy_target_names(&self) -> Vec<String> {
+        let mut names: Vec<String> = self.effective_copy_targets().into_keys().collect();
+        names.sort();
+        names
+    }
 }
 
 #[cfg(test)]
@@ -154,7 +217,7 @@ mod tests {
                 width: 640.0,
                 height: 480.0,
             }),
-            ephemeral_notification_seconds: DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS,
+            ..AppConfig::default()
         };
         let yaml = serde_yaml::to_string(&config).unwrap();
         let parsed: AppConfig = serde_yaml::from_str(&yaml).unwrap();
@@ -182,6 +245,7 @@ mod tests {
         let config = AppConfig {
             window: None,
             ephemeral_notification_seconds: 5,
+            ..AppConfig::default()
         };
         let yaml = serde_yaml::to_string(&config).unwrap();
         let parsed: AppConfig = serde_yaml::from_str(&yaml).unwrap();
@@ -195,5 +259,58 @@ mod tests {
         let size = config.window_size();
         assert_eq!(size.width, MIN_WINDOW_WIDTH);
         assert_eq!(size.height, MIN_WINDOW_HEIGHT);
+    }
+
+    #[test]
+    fn default_config_includes_copy_targets() {
+        let config = AppConfig::default();
+        let targets = config.effective_copy_targets();
+        assert_eq!(
+            targets.get("claude").map(String::as_str),
+            Some("https://claude.ai/new")
+        );
+        assert_eq!(
+            targets.get("gemini").map(String::as_str),
+            Some("https://gemini.google.com/app")
+        );
+        assert_eq!(config.resolved_last_copy_target(), "claude");
+    }
+
+    #[test]
+    fn yaml_roundtrip_preserves_copy_targets() {
+        let mut copy_targets = default_copy_targets();
+        copy_targets.insert("custom".to_string(), "https://example.com".to_string());
+        let config = AppConfig {
+            window: None,
+            ephemeral_notification_seconds: DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS,
+            copy_targets,
+            last_copy_target: "gemini".to_string(),
+        };
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        let parsed: AppConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.resolved_last_copy_target(), "gemini");
+        assert_eq!(
+            parsed.url_for_copy_target("custom").as_deref(),
+            Some("https://example.com")
+        );
+    }
+
+    #[test]
+    fn invalid_last_copy_target_falls_back_to_first_sorted() {
+        let config = AppConfig {
+            window: None,
+            ephemeral_notification_seconds: DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS,
+            copy_targets: default_copy_targets(),
+            last_copy_target: "missing".to_string(),
+        };
+        assert_eq!(config.resolved_last_copy_target(), "claude");
+    }
+
+    #[test]
+    fn set_last_copy_target_rejects_unknown_name() {
+        let mut config = AppConfig::default();
+        assert!(config.set_last_copy_target("unknown").is_err());
+        assert!(config.set_last_copy_target("claude").is_ok());
+        assert_eq!(config.last_copy_target, "claude");
     }
 }

@@ -8,6 +8,7 @@ import {
   TemplateEditor,
   type TemplateEditorHandle,
 } from "./TemplateEditor";
+import { FormRow } from "./FormRow";
 
 type EditorViewProps = {
   editingPrompt: Prompt | null;
@@ -88,38 +89,39 @@ export function EditorView({
       </h1>
       <div className="editor-body">
         <form ref={editorFormRef} noValidate>
-          <label>
-            Prompt Name
-            <input
-              name="name"
-              type="text"
-              defaultValue={p?.name ?? ""}
-              placeholder="e.g. git-commit"
-            />
-          </label>
-          <label>
-            Description
-            <input
-              name="description"
-              type="text"
-              defaultValue={p?.description ?? ""}
-              placeholder="Short summary shown next to the title"
-            />
-          </label>
-          <label>
-            Category
-            <select
-              name="category"
-              defaultValue={p?.category ?? DEFAULT_CATEGORY}
-            >
-              {CATEGORIES.map((category) => (
-                <option key={category.slug} value={category.slug}>
-                  {category.label}
-                </option>
-              ))}
-              <option value={DEFAULT_CATEGORY}>General</option>
-            </select>
-          </label>
+          <table className="compact-form-table editor-fields-table">
+            <tbody>
+              <FormRow label="Prompt Name">
+                <input
+                  name="name"
+                  type="text"
+                  defaultValue={p?.name ?? ""}
+                  placeholder="e.g. git-commit"
+                />
+              </FormRow>
+              <FormRow label="Description">
+                <input
+                  name="description"
+                  type="text"
+                  defaultValue={p?.description ?? ""}
+                  placeholder="Short summary shown next to the title"
+                />
+              </FormRow>
+              <FormRow label="Category">
+                <select
+                  name="category"
+                  defaultValue={p?.category ?? DEFAULT_CATEGORY}
+                >
+                  {CATEGORIES.map((category) => (
+                    <option key={category.slug} value={category.slug}>
+                      {category.label}
+                    </option>
+                  ))}
+                  <option value={DEFAULT_CATEGORY}>General</option>
+                </select>
+              </FormRow>
+            </tbody>
+          </table>
           <label className="template-content-field">
             Template Content
             <TemplateEditor

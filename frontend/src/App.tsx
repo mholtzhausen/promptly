@@ -27,7 +27,7 @@ import {
 } from "./lib/categories";
 import type { View } from "./lib/view";
 import { windowTitleForView } from "./lib/view";
-import type { HistoryEntry, HistoryListItem, Prompt, VariableDto, VariableValue } from "./types";
+import type { CopyTarget, HistoryEntry, HistoryListItem, Prompt, VariableDto, VariableValue } from "./types";
 import "./styles.css";
 
 export default function App() {
@@ -44,6 +44,8 @@ export default function App() {
   const [variables, setVariables] = useState<VariableDto[]>([]);
   const [variableValues, setVariableValues] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState("");
+  const [copyTargets, setCopyTargets] = useState<CopyTarget[]>([]);
+  const [selectedCopyTarget, setSelectedCopyTarget] = useState("claude");
 
   const [historyQuery, setHistoryQuery] = useState("");
   const [historySelectedIndex, setHistorySelectedIndex] = useState(0);
@@ -526,10 +528,6 @@ export default function App() {
     });
   }, [copyVariablesAction, resetVariables, focusSearch]);
 
-  const copyVariables = useCallback(async () => {
-    await copyVariablesAction(() => {});
-  }, [copyVariablesAction]);
-
   const copyAndCloseVariables = useCallback(async () => {
     await copyVariablesAction(async () => {
       setView("list");
@@ -537,6 +535,66 @@ export default function App() {
       await api.hideWindow();
     });
   }, [copyVariablesAction, resetVariables]);
+
+  const copyVariables = useCallback(async () => {
+    await copyAndCloseVariables();
+  }, [copyAndCloseVariables]);
+
+  const copyAndOpenTarget = useCallback(async (targetName?: string) => {
+    if (!variablePrompt) return;
+    const target = targetName ?? selectedCopyTarget;
+    try {
+      await copyPromptToClipboard({
+        text: preview,
+        promptName: variablePrompt.name,
+        messageKind: variables.length === 0 ? "noVariables" : "variables",
+        promptId: variablePrompt.id,
+        values: buildCopyValues(),
+      });
+      await api.openCopyTarget(target);
+      setSelectedCopyTarget(target);
+      setView("list");
+      resetVariables();
+      await api.hideWindow();
+    } catch (err) {
+      reportStatusError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Could not copy prompt and open target.",
+      );
+    }
+  }, [
+    variablePrompt,
+    preview,
+    variables.length,
+    buildCopyValues,
+    selectedCopyTarget,
+    resetVariables,
+    reportStatusError,
+  ]);
+
+  useEffect(() => {
+    if (view !== "variables" || !variablePrompt) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const settings = await api.getCopySettings();
+        if (cancelled) return;
+        setCopyTargets(settings.targets);
+        setSelectedCopyTarget(settings.lastTarget);
+      } catch (err) {
+        if (cancelled) return;
+        reportStatusError(
+          err instanceof Error && err.message
+            ? err.message
+            : "Could not load copy targets.",
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [view, variablePrompt, reportStatusError]);
 
   useEffect(() => {
     if (
@@ -670,7 +728,9 @@ export default function App() {
         onVariableInput={handleVariableInput}
         onCancel={cancelVariables}
         onCopy={() => void copyVariables()}
-        onCopyAndClose={() => void copyAndCloseVariables()}
+        copyTargets={copyTargets}
+        selectedCopyTarget={selectedCopyTarget}
+        onCopyAndOpen={(name) => void copyAndOpenTarget(name)}
       />,
     );
   }

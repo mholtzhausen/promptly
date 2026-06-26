@@ -1,6 +1,7 @@
 import type {
   CopyPromptPayload,
   CopyMessageKind,
+  CopySettings,
   DeletePromptPayload,
   HistoryEntry,
   HistoryIdPayload,
@@ -64,6 +65,14 @@ export const api = {
     request<{ version: string; description: string; features: string[] }>(
       "getAppInfo",
     ),
+
+  getCopySettings: () => request<CopySettings>("getCopySettings"),
+
+  setLastCopyTarget: (name: string) =>
+    request<boolean>("setLastCopyTarget", { name }),
+
+  openCopyTarget: (name: string) =>
+    request<boolean>("openCopyTarget", { name }),
 };
 
 export type CopyPromptArgs = {

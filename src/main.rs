@@ -1,6 +1,7 @@
 //! Promptly — system-tray app for managing prompt templates.
 
 mod about;
+mod browser;
 mod cli;
 mod config;
 mod db;

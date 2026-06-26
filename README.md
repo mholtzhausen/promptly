@@ -106,7 +106,7 @@ Set `PROMPTLY_DB_PATH` to override the default SQLite location. Set `RUST_LOG=pr
 | Path | Purpose |
 |---|---|
 | `~/.config/promptly/prompts.db` | SQLite prompts + copy history |
-| `~/.config/promptly/config.yml` | Window size preferences |
+| `~/.config/promptly/config.yml` | Window size, copy targets (`claude`/`gemini` URLs), last copy target |
 | `~/.config/promptly/promptly.lock` | Single-instance lock file |
 | `~/.local/state/promptly/promptly.log` | Daemon log file (when backgrounded) |
 

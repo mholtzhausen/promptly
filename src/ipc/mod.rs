@@ -1,6 +1,7 @@
 //! Typed IPC boundary between the React frontend and the Rust backend.
 
 mod effects;
+mod copy_targets;
 mod history;
 mod limits;
 mod notifications;
@@ -144,6 +145,20 @@ impl IpcBackend {
             }
             IpcCommand::GetAppInfo => {
                 let (response, hide_window, quit_app) = self.cmd_get_app_info(id);
+                (response, hide_window, quit_app, false, None)
+            }
+            IpcCommand::GetCopySettings => {
+                let (response, hide_window, quit_app) = copy_targets::cmd_get_copy_settings(id);
+                (response, hide_window, quit_app, false, None)
+            }
+            IpcCommand::SetLastCopyTarget(p) => {
+                let (response, hide_window, quit_app) =
+                    copy_targets::cmd_set_last_copy_target(id, p);
+                (response, hide_window, quit_app, false, None)
+            }
+            IpcCommand::OpenCopyTarget(p) => {
+                let (response, hide_window, quit_app) =
+                    copy_targets::cmd_open_copy_target(id, p);
                 (response, hide_window, quit_app, false, None)
             }
         }

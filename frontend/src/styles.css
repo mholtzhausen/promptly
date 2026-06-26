@@ -432,7 +432,10 @@ h1.panel-header {
   flex-direction: column;
   gap: 10px;
   min-height: 100%;
-  padding-inline: var(--pane-padding);
+}
+
+.editor-body .editor-fields-table {
+  flex-shrink: 0;
 }
 
 .editor-body .template-content-field {
@@ -440,6 +443,7 @@ h1.panel-header {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  padding-inline: var(--pane-padding);
 }
 
 .editor-body .template-content-field .template-editor {
@@ -659,6 +663,40 @@ button.danger {
   margin-bottom: 6px;
 }
 
+/* ── Compact form table (variables + editor metadata) ───────────────── */
+.compact-form-table {
+  border-collapse: collapse;
+  width: calc(100% - 2 * var(--pane-padding));
+  margin: 0 var(--pane-padding);
+  font-size: 13px;
+  border: none;
+}
+
+.compact-form-table th {
+  text-align: right;
+  font-weight: 600;
+  color: #4a4842;
+  padding: 4px 8px 4px 0;
+  white-space: nowrap;
+  vertical-align: middle;
+  width: 1%;
+  max-width: 25%;
+}
+
+.compact-form-table td {
+  text-align: left;
+  padding: 2px 0;
+  vertical-align: middle;
+  width: 100%;
+}
+
+.compact-form-table input[type="text"],
+.compact-form-table input[type="number"],
+.compact-form-table select,
+.compact-form-table textarea {
+  width: 100%;
+}
+
 /* ── Variable fields ─────────────────────────────────────────────────── */
 .variables-body {
   flex: 1;
@@ -686,6 +724,52 @@ button.danger {
 
 .variables-footer.panel-footer .buttons {
   margin-top: 0;
+}
+
+.copy-target-split {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+}
+
+.copy-target-main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.copy-target-toggle {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left: 1px solid rgba(26, 26, 26, 0.15);
+  padding-inline: 6px;
+  min-width: 28px;
+}
+
+.copy-target-menu {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 4px;
+  background-color: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 -2px 10px rgba(28, 27, 24, 0.12);
+  display: flex;
+  flex-direction: column;
+  min-width: 148px;
+  z-index: 10;
+  overflow: hidden;
+}
+
+.copy-target-menu button {
+  text-align: left;
+  padding: 8px 12px;
+  background: transparent;
+  border-radius: 0;
+}
+
+.copy-target-menu button:hover,
+.copy-target-menu button[aria-current="true"] {
+  background-color: #f0ede5;
 }
 
 .history-detail-body {
@@ -840,17 +924,6 @@ button.danger {
 .variable-field,
 .preview-field {
   margin: 0 var(--pane-padding);
-}
-
-.var-name {
-  font-weight: bold;
-  margin-bottom: 2px;
-}
-
-.var-desc {
-  color: #b0afa7;
-  font-size: 11px;
-  margin-bottom: 2px;
 }
 
 /* ── Template editor variable chips ──────────────────────────────────── */
