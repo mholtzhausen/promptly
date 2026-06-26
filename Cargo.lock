@@ -2309,7 +2309,7 @@ dependencies = [
 
 [[package]]
 name = "promptly"
-version = "0.8.0+1"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "arboard",

@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-26
+
 ### Added
 
+- **1.0 stable release** — category filtering, starter pack, copy targets, in-app notifications, and update tooling
+- Category filtering with colored labels, checklist filter menu, and category field on prompts (schema migration)
+- Starter pack: built-in AI assistant templates on first launch and via `promptly seed` / `promptly --seed`
+- Copy targets: configure Claude/Gemini URLs in `config.yml`, remember last target, copy-to-target menu in variable flow
+- In-app notification footer with ephemeral notifications pushed from the backend
 - Startup and tray **Check for Updates** with desktop notifications and in-app changelog update dialog
 - `promptly update` CLI command to install the latest release via `scripts/install.sh`
+- About view in the app and tray **About** menu entry
 - Install script systemd user-service management (`PROMPTLY_MANAGE_SERVICE`, interactive TTY prompt)
 - Update checks resolve the latest release via GitHub redirect/Atom feed (no API token required); GitHub API is a fallback only
 
@@ -64,7 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fuzzy search, variable interpolation, copy history
 - Global hotkey (Ctrl+Alt+Space) and ksni tray icon
 
-[Unreleased]: https://github.com/mholtzhausen/promptly/compare/v0.8.0+1...HEAD
+[Unreleased]: https://github.com/mholtzhausen/promptly/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/mholtzhausen/promptly/releases/tag/v1.0.0
 [0.8.0+1]: https://github.com/mholtzhausen/promptly/releases/tag/v0.8.0%2B1
 [0.8.0]: https://github.com/mholtzhausen/promptly/releases/tag/v0.8.0
 [0.1.0]: https://github.com/mholtzhausen/promptly/releases/tag/v0.1.0

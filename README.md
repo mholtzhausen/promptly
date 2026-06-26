@@ -54,7 +54,7 @@ systemctl --user enable --now promptly.service
 Pin a specific release:
 
 ```bash
-PROMPTLY_VERSION=v0.8.0+1 curl -fsSL https://raw.githubusercontent.com/mholtzhausen/promptly/main/scripts/install.sh | bash
+PROMPTLY_VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/mholtzhausen/promptly/main/scripts/install.sh | bash
 ```
 
 To remove a user-local install: `make uninstall` (from a source checkout) or delete the files listed above manually.
