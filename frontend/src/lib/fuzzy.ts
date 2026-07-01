@@ -1,16 +1,58 @@
 import type { Prompt } from "../types";
 import type { CategoryDef } from "../types";
-import { categoryLabel } from "./categories";
+
 export function fuzzyMatch(text: string, pattern: string): boolean {
+  return fuzzyScore(text, pattern) !== null;
+}
+
+/** Score how well pattern fuzzy-matches text; higher is better. null if no match. */
+export function fuzzyScore(text: string, pattern: string): number | null {
+  const pl = pattern.trim().toLowerCase();
+  if (!pl) return 0;
+
   const tl = text.toLowerCase();
-  const pl = pattern.toLowerCase();
+  let score = 0;
   let ti = 0;
+  let consecutive = 0;
+  let prevIdx = -1;
+
   for (let pi = 0; pi < pl.length; pi++) {
     const idx = tl.indexOf(pl[pi], ti);
-    if (idx === -1) return false;
+    if (idx === -1) return null;
+
+    if (prevIdx >= 0 && idx === prevIdx + 1) {
+      consecutive++;
+      score += consecutive * 4;
+    } else {
+      consecutive = 0;
+      if (prevIdx >= 0) {
+        score -= (idx - prevIdx - 1) * 2;
+      } else {
+        score -= idx * 3;
+      }
+    }
+
+    if (idx === 0) {
+      score += 8;
+    } else {
+      const prev = tl[idx - 1];
+      if (prev === " " || prev === "-" || prev === "_") {
+        score += 5;
+      }
+    }
+
+    prevIdx = idx;
     ti = idx + 1;
   }
-  return true;
+
+  const subIdx = tl.indexOf(pl);
+  if (subIdx !== -1) {
+    score += 25;
+    if (subIdx === 0) score += 15;
+  }
+
+  score -= tl.length * 0.05;
+  return score;
 }
 
 /** Narrow prompts by selected category slugs. Empty selection yields none. */
@@ -22,14 +64,23 @@ export function filterByCategories(
   return prompts.filter((p) => selectedSlugs.has(p.category));
 }
 
-/** Filter prompts by fuzzy match, ordered: name → description → category → content. */
+export type FilteredPrompts = {
+  nameMatches: Prompt[];
+  descMatches: Prompt[];
+};
+
+export function flattenFilteredPrompts(filtered: FilteredPrompts): Prompt[] {
+  return [...filtered.nameMatches, ...filtered.descMatches];
+}
+
+/** Filter prompts by fuzzy match: name tier, then description tier; each sorted by closeness. */
 export function filterPrompts(
   prompts: Prompt[],
   query: string,
   selectedCategories?: Set<string>,
   allCategorySlugs?: string[],
-  categories: CategoryDef[] = [],
-): Prompt[] {
+  _categories: CategoryDef[] = [],
+): FilteredPrompts {
   let scoped = prompts;
   if (selectedCategories) {
     const allSelected =
@@ -42,31 +93,35 @@ export function filterPrompts(
   }
 
   const q = query.trim();
-  if (!q) return scoped;
+  if (!q) return { nameMatches: scoped, descMatches: [] };
 
-  const nameMatches: Prompt[] = [];
-  const descMatches: Prompt[] = [];
-  const categoryMatches: Prompt[] = [];
-  const contentMatches: Prompt[] = [];
+  const nameMatches: { prompt: Prompt; score: number }[] = [];
+  const descMatches: { prompt: Prompt; score: number }[] = [];
 
   for (const p of scoped) {
-    if (fuzzyMatch(p.name, q)) {
-      nameMatches.push(p);
-    } else if (fuzzyMatch(p.description, q)) {
-      descMatches.push(p);
-    } else if (fuzzyMatch(categoryLabel(p.category, categories), q)) {
-      categoryMatches.push(p);
-    } else if (fuzzyMatch(p.content, q)) {
-      contentMatches.push(p);
+    const nameScore = fuzzyScore(p.name, q);
+    if (nameScore !== null) {
+      nameMatches.push({ prompt: p, score: nameScore });
+      continue;
+    }
+    const descScore = fuzzyScore(p.description, q);
+    if (descScore !== null) {
+      descMatches.push({ prompt: p, score: descScore });
     }
   }
 
-  return [
-    ...nameMatches,
-    ...descMatches,
-    ...categoryMatches,
-    ...contentMatches,
-  ];
+  const byScore = (
+    a: { score: number },
+    b: { score: number },
+  ) => b.score - a.score;
+
+  nameMatches.sort(byScore);
+  descMatches.sort(byScore);
+
+  return {
+    nameMatches: nameMatches.map((m) => m.prompt),
+    descMatches: descMatches.map((m) => m.prompt),
+  };
 }
 
 export function filterHistory<T extends { title: string }>(

@@ -3,6 +3,7 @@ import {
   filterByCategories,
   filterHistory,
   filterPrompts,
+  flattenFilteredPrompts,
   fuzzyMatch,
 } from "./fuzzy";
 import type { CategoryDef, Prompt } from "../types";
@@ -42,17 +43,19 @@ describe("fuzzyMatch", () => {
 
 describe("filterPrompts", () => {
   it("returns all when query empty", () => {
-    expect(filterPrompts(sample, "")).toHaveLength(2);
+    expect(flattenFilteredPrompts(filterPrompts(sample, ""))).toHaveLength(2);
   });
 
   it("includes general prompts when all categories selected", () => {
     const selected = new Set(["writing", "general"]);
     expect(
-      filterPrompts(sample, "", selected, ["writing", "general"], categories),
+      flattenFilteredPrompts(
+        filterPrompts(sample, "", selected, ["writing", "general"], categories),
+      ),
     ).toHaveLength(2);
   });
 
-  it("prioritizes name matches", () => {
+  it("prioritizes name matches over description matches", () => {
     const prompts: Prompt[] = [
       {
         id: 1,
@@ -69,8 +72,74 @@ describe("filterPrompts", () => {
         category: "general",
       },
     ];
-    const result = filterPrompts(prompts, "wel");
+    const result = flattenFilteredPrompts(filterPrompts(prompts, "wel"));
     expect(result[0].name).toBe("welcoming");
+  });
+
+  it("orders name matches by closeness", () => {
+    const prompts: Prompt[] = [
+      {
+        id: 1,
+        name: "Agent System Prompt",
+        description: "x",
+        content: "z",
+        category: "general",
+      },
+      {
+        id: 2,
+        name: "My Agent",
+        description: "x",
+        content: "z",
+        category: "general",
+      },
+      {
+        id: 3,
+        name: "Argument Parser",
+        description: "x",
+        content: "z",
+        category: "general",
+      },
+    ];
+    const result = flattenFilteredPrompts(filterPrompts(prompts, "agent"));
+    expect(result.map((p) => p.name)).toEqual([
+      "Agent System Prompt",
+      "My Agent",
+      "Argument Parser",
+    ]);
+  });
+
+  it("does not match prompt content", () => {
+    const prompts: Prompt[] = [
+      {
+        id: 1,
+        name: "unrelated",
+        description: "nothing here",
+        content: "agent instructions inside body",
+        category: "general",
+      },
+    ];
+    expect(flattenFilteredPrompts(filterPrompts(prompts, "agent"))).toHaveLength(0);
+  });
+
+  it("places description matches after name matches", () => {
+    const prompts: Prompt[] = [
+      {
+        id: 1,
+        name: "z",
+        description: "coding agent rules",
+        content: "c",
+        category: "general",
+      },
+      {
+        id: 2,
+        name: "Agent",
+        description: "d",
+        content: "c",
+        category: "general",
+      },
+    ];
+    const result = flattenFilteredPrompts(filterPrompts(prompts, "agent"));
+    expect(result.map((p) => p.id)).toEqual([2, 1]);
   });
 
   it("filters by selected categories", () => {
@@ -91,26 +160,17 @@ describe("filterPrompts", () => {
       },
     ];
     const selected = new Set(["development"]);
-    expect(filterPrompts(prompts, "", selected, ["development", "writing"])).toHaveLength(1);
-    expect(filterPrompts(prompts, "", selected)[0].name).toBe("a");
+    expect(
+      flattenFilteredPrompts(
+        filterPrompts(prompts, "", selected, ["development", "writing"]),
+      ),
+    ).toHaveLength(1);
+    expect(filterPrompts(prompts, "", selected).nameMatches[0].name).toBe("a");
   });
 
   it("returns none when no categories selected", () => {
     expect(filterByCategories(sample, new Set())).toHaveLength(0);
-    expect(filterPrompts(sample, "", new Set())).toHaveLength(0);
-  });
-
-  it("matches category labels in search", () => {
-    const prompts: Prompt[] = [
-      {
-        id: 1,
-        name: "z",
-        description: "d",
-        content: "c",
-        category: "writing",
-      },
-    ];
-    expect(filterPrompts(prompts, "writ", undefined, undefined, categories)).toHaveLength(1);
+    expect(flattenFilteredPrompts(filterPrompts(sample, "", new Set()))).toHaveLength(0);
   });
 });
 

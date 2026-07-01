@@ -21,7 +21,7 @@ import {
 import { useHistory } from "./hooks/useHistory";
 import { useNotifications } from "./hooks/useNotifications";
 import { usePrompts } from "./hooks/usePrompts";
-import { filterHistory, filterPrompts } from "./lib/fuzzy";
+import { filterHistory, filterPrompts, flattenFilteredPrompts } from "./lib/fuzzy";
 import {
   categorySlugs,
   initialSelectedCategories,
@@ -271,13 +271,14 @@ export default function App() {
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, [categoryMenuOpen]);
 
-  const filtered = filterPrompts(
+  const filteredTiers = filterPrompts(
     prompts,
     query,
     selectedCategories,
     categorySlugs(categories),
     categories,
   );
+  const filtered = flattenFilteredPrompts(filteredTiers);
   const filteredHistory = filterHistory(historyEntries, historyQuery);
 
   useSelectedIndexBounds(filtered.length, selectedIndex, setSelectedIndex);
@@ -832,7 +833,7 @@ export default function App() {
       searchRef={searchRef}
       listRef={listRef}
       categoryMenuRef={categoryMenuRef}
-      filtered={filtered}
+      filtered={filteredTiers}
       prompts={prompts}
       categories={categories}
       selectedIndex={selectedIndex}

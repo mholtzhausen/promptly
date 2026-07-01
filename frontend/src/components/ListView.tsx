@@ -7,6 +7,8 @@ import {
   categoryLabel,
   initialSelectedCategories,
 } from "../lib/categories";
+import type { FilteredPrompts } from "../lib/fuzzy";
+import { flattenFilteredPrompts } from "../lib/fuzzy";
 import type { CategoryDef, Prompt } from "../types";
 
 type ListViewProps = {
@@ -16,7 +18,7 @@ type ListViewProps = {
   searchRef: RefObject<HTMLInputElement | null>;
   listRef: RefObject<HTMLDivElement | null>;
   categoryMenuRef: RefObject<HTMLDivElement | null>;
-  filtered: Prompt[];
+  filtered: FilteredPrompts;
   prompts: Prompt[];
   categories: CategoryDef[];
   selectedIndex: number;
@@ -41,11 +43,12 @@ function categoryCount(prompts: Prompt[], slug: string): number {
 
 function listStatusText(
   prompts: Prompt[],
-  filtered: Prompt[],
+  filtered: FilteredPrompts,
   query: string,
   selectedCategories: Set<string>,
   categories: CategoryDef[],
 ): string {
+  const filteredFlat = flattenFilteredPrompts(filtered);
   if (prompts.length === 0) {
     return "No prompts yet. Click + to add one.";
   }
@@ -60,14 +63,14 @@ function listStatusText(
         .map((c) => c.label)
     : [];
 
-  if (query && filtered.length === 0) {
+  if (query && filteredFlat.length === 0) {
     if (filteringCategories && activeLabels.length > 0) {
       return `No matches for "${query}" in ${activeLabels.join(", ")}`;
     }
     return `No matches for "${query}"`;
   }
 
-  const countLabel = `${filtered.length} prompt${filtered.length !== 1 ? "s" : ""}`;
+  const countLabel = `${filteredFlat.length} prompt${filteredFlat.length !== 1 ? "s" : ""}`;
   if (filteringCategories && activeLabels.length > 0) {
     return `${countLabel} · ${activeLabels.join(", ")}`;
   }
@@ -123,6 +126,64 @@ export function ListView({
   const clearAllCategories = () => {
     setSelectedCategories(new Set());
     setSelectedIndex(0);
+  };
+
+  const showFilterSections = query.trim().length > 0;
+  let rowIndex = 0;
+
+  const renderPromptRow = (p: Prompt) => {
+    const i = rowIndex;
+    rowIndex += 1;
+    return (
+      <div
+        key={p.id}
+        role="option"
+        aria-selected={i === selectedIndex}
+        className={"prompt-row" + (i === selectedIndex ? " selected" : "")}
+        onClick={(e) => {
+          setSelectedIndex(i);
+          focusSearch();
+          if (e.ctrlKey || e.metaKey) {
+            onEditPrompt(p);
+          } else {
+            onSelectPrompt(p);
+          }
+        }}
+      >
+        <div className="prompt-text">
+          {p.category !== DEFAULT_CATEGORY && (
+            <CategoryChip
+              label={categoryLabel(p.category, categories)}
+              chipClass={categoryChipClass(p.category, categories)}
+            />
+          )}
+          <span className="prompt-title">{p.name}</span>
+          <span className="prompt-description">{p.description}</span>
+        </div>
+        <div className="prompt-actions">
+          <button
+            className="action-btn"
+            title="Edit prompt"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEditPrompt(p);
+            }}
+          >
+            ✎
+          </button>
+          <button
+            className="action-btn"
+            title="Delete prompt"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDeletePrompt(p);
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -253,56 +314,28 @@ export function ListView({
         </button>
       </div>
       <div id="prompt-list" ref={listRef} role="listbox" aria-label="Prompt templates">
-        {filtered.map((p, i) => (
-          <div
-            key={p.id}
-            role="option"
-            aria-selected={i === selectedIndex}
-            className={"prompt-row" + (i === selectedIndex ? " selected" : "")}
-            onClick={(e) => {
-              setSelectedIndex(i);
-              focusSearch();
-              if (e.ctrlKey || e.metaKey) {
-                onEditPrompt(p);
-              } else {
-                onSelectPrompt(p);
-              }
-            }}
-          >
-            <div className="prompt-text">
-              {p.category !== DEFAULT_CATEGORY && (
-                <CategoryChip
-                  label={categoryLabel(p.category, categories)}
-                  chipClass={categoryChipClass(p.category, categories)}
-                />
-              )}
-              <span className="prompt-title">{p.name}</span>
-              <span className="prompt-description">{p.description}</span>
-            </div>
-            <div className="prompt-actions">
-              <button
-                className="action-btn"
-                title="Edit prompt"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onEditPrompt(p);
-                }}
-              >
-                ✎
-              </button>
-              <button
-                className="action-btn"
-                title="Delete prompt"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeletePrompt(p);
-                }}
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        ))}
+        {showFilterSections ? (
+          <>
+            {filtered.nameMatches.length > 0 && (
+              <>
+                <div className="prompt-list-heading" aria-hidden="true">
+                  Name matches
+                </div>
+                {filtered.nameMatches.map(renderPromptRow)}
+              </>
+            )}
+            {filtered.descMatches.length > 0 && (
+              <>
+                <div className="prompt-list-heading" aria-hidden="true">
+                  Description matches
+                </div>
+                {filtered.descMatches.map(renderPromptRow)}
+              </>
+            )}
+          </>
+        ) : (
+          filtered.nameMatches.map(renderPromptRow)
+        )}
       </div>
       <div
         id="status-label"

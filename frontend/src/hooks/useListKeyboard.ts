@@ -37,9 +37,9 @@ export function useScrollSelectedIntoView(
 ) {
   useEffect(() => {
     if (!active || !listRef.current) return;
-    const row = listRef.current.children[selectedIndex] as
-      | HTMLElement
-      | undefined;
+    const row = listRef.current.querySelector(
+      ".prompt-row.selected",
+    ) as HTMLElement | undefined;
     row?.scrollIntoView({ block: "nearest" });
   }, [active, listRef, selectedIndex]);
 }
