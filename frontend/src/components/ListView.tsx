@@ -1,12 +1,13 @@
 import type { RefObject } from "react";
+import { CategoryChip } from "./CategoryChip";
 import {
-  CATEGORIES,
-  FILTERABLE_CATEGORY_SLUGS,
-  allFilterableCategoriesSelected,
+  DEFAULT_CATEGORY,
+  allCategoriesSelected,
   categoryChipClass,
   categoryLabel,
+  initialSelectedCategories,
 } from "../lib/categories";
-import type { Prompt } from "../types";
+import type { CategoryDef, Prompt } from "../types";
 
 type ListViewProps = {
   query: string;
@@ -17,6 +18,7 @@ type ListViewProps = {
   categoryMenuRef: RefObject<HTMLDivElement | null>;
   filtered: Prompt[];
   prompts: Prompt[];
+  categories: CategoryDef[];
   selectedIndex: number;
   selectedCategories: Set<string>;
   setSelectedCategories: (next: Set<string>) => void;
@@ -24,6 +26,7 @@ type ListViewProps = {
   setCategoryMenuOpen: (open: boolean) => void;
   focusSearch: () => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
+  onOpenSettings: () => void;
   onOpenHistory: () => void;
   onOpenNew: () => void;
   onSelectPrompt: (p: Prompt) => void;
@@ -41,14 +44,20 @@ function listStatusText(
   filtered: Prompt[],
   query: string,
   selectedCategories: Set<string>,
+  categories: CategoryDef[],
 ): string {
   if (prompts.length === 0) {
     return "No prompts yet. Click + to add one.";
   }
 
-  const filteringCategories = !allFilterableCategoriesSelected(selectedCategories);
+  const filteringCategories = !allCategoriesSelected(
+    selectedCategories,
+    categories,
+  );
   const activeLabels = filteringCategories
-    ? CATEGORIES.filter((c) => selectedCategories.has(c.slug)).map((c) => c.label)
+    ? categories
+        .filter((c) => selectedCategories.has(c.slug))
+        .map((c) => c.label)
     : [];
 
   if (query && filtered.length === 0) {
@@ -74,6 +83,7 @@ export function ListView({
   categoryMenuRef,
   filtered,
   prompts,
+  categories,
   selectedIndex,
   selectedCategories,
   setSelectedCategories,
@@ -81,6 +91,7 @@ export function ListView({
   setCategoryMenuOpen,
   focusSearch,
   onKeyDown,
+  onOpenSettings,
   onOpenHistory,
   onOpenNew,
   onSelectPrompt,
@@ -88,7 +99,10 @@ export function ListView({
   onDeletePrompt,
   statusError,
 }: ListViewProps) {
-  const filteringCategories = !allFilterableCategoriesSelected(selectedCategories);
+  const filteringCategories = !allCategoriesSelected(
+    selectedCategories,
+    categories,
+  );
 
   const toggleCategory = (slug: string, checked: boolean) => {
     const next = new Set(selectedCategories);
@@ -102,7 +116,7 @@ export function ListView({
   };
 
   const selectAllCategories = () => {
-    setSelectedCategories(new Set(FILTERABLE_CATEGORY_SLUGS));
+    setSelectedCategories(initialSelectedCategories(categories));
     setSelectedIndex(0);
   };
 
@@ -130,6 +144,7 @@ export function ListView({
             if (
               next?.closest("#add-button") ||
               next?.closest("#history-button") ||
+              next?.closest("#settings-button") ||
               next?.closest("#categories-button") ||
               next?.closest(".category-filter-menu") ||
               next?.closest(".action-btn")
@@ -156,7 +171,7 @@ export function ListView({
               </div>
               <table className="category-filter-table">
                 <tbody>
-                  {CATEGORIES.map((category) => {
+                  {categories.map((category) => {
                     const count = categoryCount(prompts, category.slug);
                     if (count === 0) return null;
                     const checked = selectedCategories.has(category.slug);
@@ -179,7 +194,14 @@ export function ListView({
                           />
                         </td>
                         <td className="category-filter-label">
-                          {category.label}
+                          {category.slug !== DEFAULT_CATEGORY ? (
+                            <CategoryChip
+                              label={category.label}
+                              chipClass={category.chipClass}
+                            />
+                          ) : (
+                            category.label
+                          )}
                         </td>
                         <td className="category-filter-count">{count}</td>
                       </tr>
@@ -204,6 +226,15 @@ export function ListView({
             ☰
           </button>
         </div>
+        <button
+          id="settings-button"
+          type="button"
+          title="Settings"
+          aria-label="Open settings"
+          onClick={onOpenSettings}
+        >
+          ⚙
+        </button>
         <button
           id="history-button"
           title="Copy history"
@@ -239,12 +270,11 @@ export function ListView({
             }}
           >
             <div className="prompt-text">
-              {p.category !== "general" && (
-                <span
-                  className={`prompt-category ${categoryChipClass(p.category)}`}
-                >
-                  {categoryLabel(p.category)}
-                </span>
+              {p.category !== DEFAULT_CATEGORY && (
+                <CategoryChip
+                  label={categoryLabel(p.category, categories)}
+                  chipClass={categoryChipClass(p.category, categories)}
+                />
               )}
               <span className="prompt-title">{p.name}</span>
               <span className="prompt-description">{p.description}</span>
@@ -283,7 +313,13 @@ export function ListView({
         {statusError ? (
           <p className="form-error">{statusError}</p>
         ) : (
-          listStatusText(prompts, filtered, query, selectedCategories)
+          listStatusText(
+            prompts,
+            filtered,
+            query,
+            selectedCategories,
+            categories,
+          )
         )}
       </div>
     </div>

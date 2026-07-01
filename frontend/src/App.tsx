@@ -23,11 +23,20 @@ import { useNotifications } from "./hooks/useNotifications";
 import { usePrompts } from "./hooks/usePrompts";
 import { filterHistory, filterPrompts } from "./lib/fuzzy";
 import {
+  categorySlugs,
   initialSelectedCategories,
 } from "./lib/categories";
 import type { View } from "./lib/view";
 import { windowTitleForView } from "./lib/view";
-import type { CopyTarget, HistoryEntry, HistoryListItem, Prompt, VariableDto, VariableValue } from "./types";
+import type {
+  CategoryDef,
+  CopyTarget,
+  HistoryEntry,
+  HistoryListItem,
+  Prompt,
+  VariableDto,
+  VariableValue,
+} from "./types";
 import "./styles.css";
 
 export default function App() {
@@ -53,8 +62,9 @@ export default function App() {
   const [historyDetailContent, setHistoryDetailContent] = useState("");
   const [pruneMenuOpen, setPruneMenuOpen] = useState(false);
   const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
-  const [selectedCategories, setSelectedCategories] = useState(
-    initialSelectedCategories,
+  const [categories, setCategories] = useState<CategoryDef[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<Set<string>>(
+    () => new Set(),
   );
   const [statusError, setStatusError] = useState<string | null>(null);
   const [updateDialog, setUpdateDialog] = useState<UpdateDialogPayload | null>(null);
@@ -111,6 +121,25 @@ export default function App() {
     clearStatusError();
   }, [clearStatusError]);
 
+  const loadAppSettings = useCallback(async () => {
+    try {
+      const settings = await api.getAppSettings();
+      const nextCategories: CategoryDef[] = settings.categories.map((c) => ({
+        slug: c.slug,
+        label: c.label,
+        chipClass: c.chipClass,
+      }));
+      setCategories(nextCategories);
+      setSelectedCategories(initialSelectedCategories(nextCategories));
+      setCopyTargets(settings.targets);
+      setSelectedCopyTarget(settings.lastTarget);
+    } catch (err) {
+      reportStatusError(
+        err instanceof Error ? err.message : "Could not load app settings.",
+      );
+    }
+  }, [reportStatusError]);
+
   const onShowUpdateDialog = useCallback((payload: UpdateDialogPayload) => {
     setUpdateDialog(payload);
     setUpdateInProgress(false);
@@ -125,6 +154,24 @@ export default function App() {
   } = useNotifications({ onShowUpdateDialog });
 
   useHostBridge({ onShow, focusSearch, onShowUpdateDialog, onShowAbout });
+
+  useEffect(() => {
+    void loadAppSettings();
+  }, [loadAppSettings]);
+
+  useEffect(() => {
+    window.__promptlyConfigUpdated = () => {
+      void loadAppSettings();
+      void loadPrompts();
+    };
+    return () => {
+      window.__promptlyConfigUpdated = () => {};
+    };
+  }, [loadAppSettings, loadPrompts]);
+
+  const openSettings = useCallback(() => {
+    void api.openSettingsWindow();
+  }, []);
 
   const closeUpdate = useCallback(() => {
     if (updateInProgress) return;
@@ -224,7 +271,13 @@ export default function App() {
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, [categoryMenuOpen]);
 
-  const filtered = filterPrompts(prompts, query, selectedCategories);
+  const filtered = filterPrompts(
+    prompts,
+    query,
+    selectedCategories,
+    categorySlugs(categories),
+    categories,
+  );
   const filteredHistory = filterHistory(historyEntries, historyQuery);
 
   useSelectedIndexBounds(filtered.length, selectedIndex, setSelectedIndex);
@@ -681,6 +734,7 @@ export default function App() {
     return renderWithNotifications(
       <EditorView
         editingPrompt={editingPrompt}
+        categories={categories}
         editorFormRef={editorFormRef}
         editorError={editorError}
         content={editorContent}
@@ -780,6 +834,7 @@ export default function App() {
       categoryMenuRef={categoryMenuRef}
       filtered={filtered}
       prompts={prompts}
+      categories={categories}
       selectedIndex={selectedIndex}
       selectedCategories={selectedCategories}
       setSelectedCategories={setSelectedCategories}
@@ -787,6 +842,7 @@ export default function App() {
       setCategoryMenuOpen={setCategoryMenuOpen}
       focusSearch={focusSearch}
       onKeyDown={handleListKey}
+      onOpenSettings={openSettings}
       onOpenHistory={() => void openHistory()}
       onOpenNew={openNew}
       onSelectPrompt={(p) => void selectPrompt(p)}

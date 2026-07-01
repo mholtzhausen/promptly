@@ -1,15 +1,17 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { SettingsApp } from "./SettingsApp";
 
 function mount() {
   const root = document.getElementById("root");
   if (!root) {
     throw new Error("missing #root element");
   }
+  const role = window.__promptlyWindowRole ?? "main";
   createRoot(root).render(
     <StrictMode>
-      <App />
+      {role === "settings" ? <SettingsApp /> : <App />}
     </StrictMode>,
   );
 }

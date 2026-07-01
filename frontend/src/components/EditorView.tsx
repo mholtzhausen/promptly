@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
-import {
-  CATEGORIES,
-  DEFAULT_CATEGORY,
-} from "../lib/categories";
-import type { Prompt } from "../types";
+import { DEFAULT_CATEGORY } from "../lib/categories";
+import type { CategoryDef, Prompt } from "../types";
 import {
   TemplateEditor,
   type TemplateEditorHandle,
@@ -12,6 +9,7 @@ import { FormRow } from "./FormRow";
 
 type EditorViewProps = {
   editingPrompt: Prompt | null;
+  categories: CategoryDef[];
   editorFormRef: RefObject<HTMLFormElement | null>;
   editorError: string | null;
   content: string;
@@ -22,6 +20,7 @@ type EditorViewProps = {
 
 export function EditorView({
   editingPrompt,
+  categories,
   editorFormRef,
   editorError,
   content,
@@ -112,12 +111,11 @@ export function EditorView({
                   name="category"
                   defaultValue={p?.category ?? DEFAULT_CATEGORY}
                 >
-                  {CATEGORIES.map((category) => (
+                  {categories.map((category) => (
                     <option key={category.slug} value={category.slug}>
                       {category.label}
                     </option>
                   ))}
-                  <option value={DEFAULT_CATEGORY}>General</option>
                 </select>
               </FormRow>
             </tbody>

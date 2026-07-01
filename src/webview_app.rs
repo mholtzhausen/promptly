@@ -3,13 +3,14 @@
 
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use crate::config::{AppConfig, WindowSize, ABOUT_WINDOW_HEIGHT, ABOUT_WINDOW_WIDTH};
 
 use tao::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use tao::event::{Event, StartCause, WindowEvent};
-use tao::event_loop::{ControlFlow, EventLoop, EventLoopProxy};
-use tao::window::WindowBuilder;
+use tao::event_loop::{ControlFlow, EventLoop, EventLoopProxy, EventLoopWindowTarget};
+use tao::window::{Window, WindowBuilder};
 use wry::WebViewBuilder;
 
 use crate::ipc::{AppNotification, DesktopEffects, IpcBackend, NotificationCollector};
@@ -17,13 +18,20 @@ use crate::tray::TrayState;
 use crate::update::UpdateCheckOutcome;
 use crate::window_focus;
 
+/// Which webview originated an IPC message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IpcSource {
+    Main,
+    Settings,
+}
+
 /// User events delivered to the Tao event loop.
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     /// Toggle window visibility (hotkey / tray).
     ToggleWindow,
-    /// Raw IPC JSON string from the webview.
-    Ipc(String),
+    /// Raw IPC JSON string from a webview.
+    Ipc { raw: String, source: IpcSource },
     /// Map the window after geometry has been applied while still hidden.
     RevealWindow,
     /// Check GitHub for a newer release.
@@ -51,9 +59,14 @@ enum ShowIntent {
     About,
 }
 
+struct SettingsWindowState {
+    window: Window,
+    webview: wry::WebView,
+}
+
 /// The Promptly webview application: window + webview + backend + tray.
 pub struct PromptlyWebviewApp {
-    window: tao::window::Window,
+    window: Window,
     webview: wry::WebView,
     backend: IpcBackend,
     _tray: TrayState,
@@ -64,7 +77,9 @@ pub struct PromptlyWebviewApp {
     on_show_pending: Cell<bool>,
     show_intent: Cell<Option<ShowIntent>>,
     window_pane: Cell<WindowPane>,
-    app_config: RefCell<AppConfig>,
+    app_config: Rc<RefCell<AppConfig>>,
+    settings_window: RefCell<Option<SettingsWindowState>>,
+    settings_focus_pending: Cell<bool>,
 }
 
 impl PromptlyWebviewApp {
@@ -75,8 +90,8 @@ impl PromptlyWebviewApp {
         tray: TrayState,
         db_path: PathBuf,
     ) -> anyhow::Result<Self> {
-        let app_config = AppConfig::load();
-        let window_size = app_config.window_size();
+        let app_config = Rc::new(RefCell::new(AppConfig::load()));
+        let window_size = app_config.borrow().window_size();
         let initial_size = LogicalSize::new(window_size.width, window_size.height);
 
         // Build window. On Linux, prevent Tao's default GtkBox so Wry's
@@ -109,7 +124,10 @@ impl PromptlyWebviewApp {
                 "/frontend/dist/index.html"
             )))
             .with_ipc_handler(move |request| {
-                let _ = proxy_for_ipc.send_event(AppEvent::Ipc(request.body().clone()));
+                let _ = proxy_for_ipc.send_event(AppEvent::Ipc {
+                    raw: request.body().clone(),
+                    source: IpcSource::Main,
+                });
             })
             .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:"))
             .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny);
@@ -126,14 +144,16 @@ impl PromptlyWebviewApp {
         Ok(Self {
             window,
             webview,
-            backend: IpcBackend::new(db_path)?,
+            backend: IpcBackend::new(db_path, app_config.clone())?,
             _tray: tray,
             event_proxy: proxy,
             focus_pending: Cell::new(false),
             on_show_pending: Cell::new(false),
             show_intent: Cell::new(None),
             window_pane: Cell::new(WindowPane::Main),
-            app_config: RefCell::new(app_config),
+            app_config,
+            settings_window: RefCell::new(None),
+            settings_focus_pending: Cell::new(false),
         })
     }
 
@@ -145,7 +165,7 @@ impl PromptlyWebviewApp {
     ) -> ! {
         let mut show_on_start = show_on_start;
         let mut startup_update_check = true;
-        event_loop.run(move |event, _target, control_flow| {
+        event_loop.run(move |event, target, control_flow| {
             *control_flow = ControlFlow::Wait;
             if show_on_start && matches!(&event, Event::NewEvents(StartCause::Init)) {
                 show_on_start = false;
@@ -158,7 +178,9 @@ impl PromptlyWebviewApp {
             match event {
                 Event::UserEvent(AppEvent::ToggleWindow) => state.toggle_window(),
                 Event::UserEvent(AppEvent::RevealWindow) => state.reveal_window(),
-                Event::UserEvent(AppEvent::Ipc(raw)) => state.handle_ipc(&raw),
+                Event::UserEvent(AppEvent::Ipc { raw, source }) => {
+                    state.handle_ipc(&raw, source, &target);
+                }
                 Event::UserEvent(AppEvent::CheckForUpdates { user_initiated }) => {
                     state.spawn_update_check(user_initiated);
                 }
@@ -176,9 +198,20 @@ impl PromptlyWebviewApp {
                     ..
                 } if window_id == state.window.id() => state.on_window_focused(),
                 Event::WindowEvent {
-                    event: WindowEvent::CloseRequested,
+                    event: WindowEvent::Focused(true),
+                    window_id,
                     ..
-                } => state.hide_window(),
+                } if state.is_settings_window_id(window_id) => state.on_settings_focused(),
+                Event::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    window_id,
+                    ..
+                } if window_id == state.window.id() => state.hide_window(),
+                Event::WindowEvent {
+                    event: WindowEvent::CloseRequested,
+                    window_id,
+                    ..
+                } if state.is_settings_window_id(window_id) => state.close_settings_window(),
                 Event::WindowEvent {
                     event: WindowEvent::Resized(_),
                     window_id,
@@ -375,6 +408,166 @@ impl PromptlyWebviewApp {
         self.app_config.borrow().ephemeral_notification_ms()
     }
 
+    fn is_settings_window_id(&self, window_id: tao::window::WindowId) -> bool {
+        self.settings_window
+            .borrow()
+            .as_ref()
+            .is_some_and(|s| s.window.id() == window_id)
+    }
+
+    fn center_on_window(
+        parent: &Window,
+        child_size: WindowSize,
+    ) -> Option<PhysicalPosition<i32>> {
+        let scale = parent.scale_factor();
+        let parent_pos = parent.outer_position().ok()?;
+        let parent_size = parent.outer_size();
+        let child_w = (child_size.width * scale).round() as i32;
+        let child_h = (child_size.height * scale).round() as i32;
+        let x = parent_pos.x + ((parent_size.width as i32 - child_w) / 2);
+        let y = parent_pos.y + ((parent_size.height as i32 - child_h) / 2);
+        Some(PhysicalPosition::new(x, y))
+    }
+
+    fn open_settings_window(&self, target: &EventLoopWindowTarget<AppEvent>) {
+        if let Some(settings) = self.settings_window.borrow().as_ref() {
+            let size = self.app_config.borrow().settings_window_size();
+            settings
+                .window
+                .set_inner_size(LogicalSize::new(size.width, size.height));
+            if let Some(pos) = Self::center_on_window(&self.window, size) {
+                settings.window.set_outer_position(pos);
+                window_focus::x11_move_window(&settings.window, pos);
+            }
+            settings.window.set_always_on_top(true);
+            settings.window.set_visible(true);
+            window_focus::present_and_activate(&settings.window);
+            self.settings_focus_pending.set(true);
+            return;
+        }
+
+        let size = self.app_config.borrow().settings_window_size();
+        let initial_size = LogicalSize::new(size.width, size.height);
+
+        #[cfg(target_os = "linux")]
+        let settings_win = {
+            use tao::platform::unix::WindowBuilderExtUnix;
+            WindowBuilder::new()
+                .with_title("Promptly | Settings")
+                .with_inner_size(initial_size)
+                .with_resizable(false)
+                .with_visible(true)
+                .with_decorations(true)
+                .with_always_on_top(true)
+                .with_default_vbox(false)
+                .build(target)
+        };
+        #[cfg(not(target_os = "linux"))]
+        let settings_win = WindowBuilder::new()
+            .with_title("Promptly | Settings")
+            .with_inner_size(initial_size)
+            .with_resizable(false)
+            .with_visible(true)
+            .with_decorations(true)
+            .with_always_on_top(true)
+            .build(target);
+
+        let settings_win = match settings_win {
+            Ok(w) => w,
+            Err(e) => {
+                log::error!("Failed to create settings window: {e}");
+                return;
+            }
+        };
+
+        if let Some(pos) = Self::center_on_window(&self.window, size) {
+            settings_win.set_outer_position(pos);
+            window_focus::x11_move_window(&settings_win, pos);
+        }
+
+        let proxy_for_ipc = self.event_proxy.clone();
+        let builder = WebViewBuilder::new()
+            .with_html(include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/frontend/dist/index.html"
+            )))
+            .with_ipc_handler(move |request| {
+                let _ = proxy_for_ipc.send_event(AppEvent::Ipc {
+                    raw: request.body().clone(),
+                    source: IpcSource::Settings,
+                });
+            })
+            .with_navigation_handler(|url| url == "about:blank" || url.starts_with("data:"))
+            .with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
+            .with_initialization_script("window.__promptlyWindowRole='settings';");
+
+        #[cfg(target_os = "linux")]
+        let settings_webview = {
+            use tao::platform::unix::WindowExtUnix;
+            use wry::WebViewBuilderExtUnix;
+            match builder.build_gtk(settings_win.gtk_window()) {
+                Ok(wv) => wv,
+                Err(e) => {
+                    log::error!("Failed to create settings webview: {e}");
+                    return;
+                }
+            }
+        };
+        #[cfg(not(target_os = "linux"))]
+        let settings_webview = match builder.build(&settings_win) {
+            Ok(wv) => wv,
+            Err(e) => {
+                log::error!("Failed to create settings webview: {e}");
+                return;
+            }
+        };
+
+        window_focus::present_and_activate(&settings_win);
+        self.settings_focus_pending.set(true);
+        *self.settings_window.borrow_mut() = Some(SettingsWindowState {
+            window: settings_win,
+            webview: settings_webview,
+        });
+    }
+
+    fn close_settings_window(&self) {
+        if let Some(settings) = self.settings_window.borrow_mut().take() {
+            settings.window.set_visible(false);
+            drop(settings);
+        }
+    }
+
+    fn on_settings_focused(&self) {
+        if !self.settings_focus_pending.take() {
+            return;
+        }
+        if let Some(settings) = self.settings_window.borrow().as_ref() {
+            let _ = settings.webview.focus_parent();
+            let _ = settings.webview.focus();
+            settings.window.set_focus();
+        }
+    }
+
+    fn notify_frontend_config_updated(&self) {
+        let _ = self.webview.evaluate_script(
+            "window.__promptlyConfigUpdated && window.__promptlyConfigUpdated();",
+        );
+    }
+
+    fn deliver_ipc_response(&self, source: IpcSource, response_json: &str) {
+        let script = format!("window.__promptlyReceive({response_json});");
+        match source {
+            IpcSource::Main => {
+                let _ = self.webview.evaluate_script(&script);
+            }
+            IpcSource::Settings => {
+                if let Some(settings) = self.settings_window.borrow().as_ref() {
+                    let _ = settings.webview.evaluate_script(&script);
+                }
+            }
+        }
+    }
+
     fn push_notifications(&self, notifications: &[AppNotification]) {
         if notifications.is_empty() {
             return;
@@ -447,19 +640,32 @@ impl PromptlyWebviewApp {
         }
     }
 
-    fn handle_ipc(&self, raw: &str) {
+    fn handle_ipc(&self, raw: &str, source: IpcSource, target: &EventLoopWindowTarget<AppEvent>) {
         let effects = NotificationCollector::new(self.ephemeral_notification_ms());
         let handled = self.backend.handle(raw, &effects);
         let notifications = effects.take();
-        let _ = self.webview.evaluate_script(&format!(
-            "window.__promptlyReceive({});",
-            handled.response_json
-        ));
+
+        self.deliver_ipc_response(source, &handled.response_json);
+
         if let Some(title) = handled.window_title {
-            self.window.set_title(&title);
+            if source == IpcSource::Main {
+                self.window.set_title(&title);
+            }
         }
-        if handled.hide_window {
-            self.hide_window();
+
+        if handled.open_settings_window {
+            self.open_settings_window(target);
+        }
+        if handled.close_settings_window {
+            self.close_settings_window();
+        } else if handled.hide_window {
+            match source {
+                IpcSource::Main => self.hide_window(),
+                IpcSource::Settings => self.close_settings_window(),
+            }
+        }
+        if handled.config_changed {
+            self.notify_frontend_config_updated();
         }
         if handled.run_update {
             std::thread::spawn(|| {
@@ -471,6 +677,8 @@ impl PromptlyWebviewApp {
         if handled.quit_app {
             std::process::exit(0);
         }
-        self.push_notifications(&notifications);
+        if source == IpcSource::Main {
+            self.push_notifications(&notifications);
+        }
     }
 }

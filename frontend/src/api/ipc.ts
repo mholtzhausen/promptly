@@ -13,6 +13,8 @@ declare global {
     __promptlyPushNotifications: (notifications: AppNotification[]) => void;
     __promptlyOnWindowVisible: () => void;
     __promptlyOnWindowHidden: () => void;
+    __promptlyWindowRole?: "main" | "settings";
+    __promptlyConfigUpdated?: () => void;
   }
 }
 

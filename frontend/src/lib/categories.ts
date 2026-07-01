@@ -1,62 +1,30 @@
-export type CategorySlug =
-  | "development"
-  | "agents"
-  | "communication"
-  | "writing"
-  | "image"
-  | "general";
+import type { CategoryDef } from "../types";
 
-export interface CategoryDef {
-  slug: CategorySlug;
-  label: string;
-  chipClass: string;
-}
+export const DEFAULT_CATEGORY = "general";
 
-export const CATEGORIES: CategoryDef[] = [
-  {
-    slug: "development",
-    label: "Development",
-    chipClass: "prompt-category--development",
-  },
-  { slug: "agents", label: "Agents", chipClass: "prompt-category--agents" },
-  {
-    slug: "communication",
-    label: "Communication",
-    chipClass: "prompt-category--communication",
-  },
-  { slug: "writing", label: "Writing", chipClass: "prompt-category--writing" },
-  { slug: "image", label: "Image", chipClass: "prompt-category--image" },
-];
-
-export const FILTERABLE_CATEGORY_SLUGS = CATEGORIES.map((c) => c.slug);
-
-export const DEFAULT_CATEGORY: CategorySlug = "general";
-
-export function categoryLabel(slug: string): string {
-  const found = CATEGORIES.find((c) => c.slug === slug);
+export function categoryLabel(slug: string, categories: CategoryDef[]): string {
+  const found = categories.find((c) => c.slug === slug);
   if (found) return found.label;
   if (slug === DEFAULT_CATEGORY) return "General";
   return slug;
 }
 
-export function isKnownCategory(slug: string): slug is CategorySlug {
-  return (
-    FILTERABLE_CATEGORY_SLUGS.includes(slug as CategorySlug) ||
-    slug === DEFAULT_CATEGORY
-  );
-}
-
-export function categoryChipClass(slug: string): string {
-  const found = CATEGORIES.find((c) => c.slug === slug);
+export function categoryChipClass(slug: string, categories: CategoryDef[]): string {
+  const found = categories.find((c) => c.slug === slug);
   return found?.chipClass ?? "prompt-category--general";
 }
 
-export function allFilterableCategoriesSelected(
+export function allCategoriesSelected(
   selected: Set<string>,
+  categories: CategoryDef[],
 ): boolean {
-  return FILTERABLE_CATEGORY_SLUGS.every((slug) => selected.has(slug));
+  return categories.every((c) => selected.has(c.slug));
 }
 
-export function initialSelectedCategories(): Set<string> {
-  return new Set(FILTERABLE_CATEGORY_SLUGS);
+export function initialSelectedCategories(categories: CategoryDef[]): Set<string> {
+  return new Set(categories.map((c) => c.slug));
+}
+
+export function categorySlugs(categories: CategoryDef[]): string[] {
+  return categories.map((c) => c.slug);
 }

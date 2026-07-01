@@ -29,6 +29,10 @@ pub enum IpcCommand {
     GetCopySettings,
     SetLastCopyTarget(CopyTargetNamePayload),
     OpenCopyTarget(CopyTargetNamePayload),
+    GetAppSettings,
+    SaveAppSettings(SaveAppSettingsPayload),
+    OpenSettingsWindow,
+    CloseSettingsWindow,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -121,7 +125,7 @@ pub struct CopyTargetNamePayload {
     pub name: String,
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CopyTargetDto {
     pub name: String,
@@ -133,6 +137,38 @@ pub struct CopyTargetDto {
 pub struct CopySettingsResult {
     pub targets: Vec<CopyTargetDto>,
     pub last_target: String,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CategoryDefDto {
+    pub slug: String,
+    pub label: String,
+    pub chip_class: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_slug: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSettingsResult {
+    pub ephemeral_notification_seconds: u64,
+    pub categories: Vec<CategoryDefDto>,
+    pub targets: Vec<CopyTargetDto>,
+    pub last_target: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveAppSettingsPayload {
+    #[serde(default)]
+    pub ephemeral_notification_seconds: Option<u64>,
+    #[serde(default)]
+    pub categories: Option<Vec<CategoryDefDto>>,
+    #[serde(default)]
+    pub targets: Option<Vec<CopyTargetDto>>,
+    #[serde(default)]
+    pub last_copy_target: Option<String>,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -180,4 +216,7 @@ pub struct HandledIpc {
     pub quit_app: bool,
     pub run_update: bool,
     pub window_title: Option<String>,
+    pub close_settings_window: bool,
+    pub open_settings_window: bool,
+    pub config_changed: bool,
 }

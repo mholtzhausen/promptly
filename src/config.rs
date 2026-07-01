@@ -15,6 +15,11 @@ pub const DEFAULT_LAST_COPY_TARGET: &str = "claude";
 pub const ABOUT_WINDOW_WIDTH: f64 = 400.0;
 pub const ABOUT_WINDOW_HEIGHT: f64 = 480.0;
 
+pub const SETTINGS_WINDOW_WIDTH: f64 = 560.0;
+pub const SETTINGS_WINDOW_HEIGHT: f64 = 420.0;
+
+pub const RESERVED_CATEGORY_GENERAL: &str = "general";
+
 const MIN_WINDOW_WIDTH: f64 = 320.0;
 const MIN_WINDOW_HEIGHT: f64 = 240.0;
 
@@ -101,12 +106,119 @@ fn default_last_copy_target() -> String {
     DEFAULT_LAST_COPY_TARGET.to_string()
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CategoryDef {
+    pub slug: String,
+    pub label: String,
+    pub chip_class: String,
+}
+
+pub fn default_categories() -> Vec<CategoryDef> {
+    vec![
+        CategoryDef {
+            slug: "development".to_string(),
+            label: "Development".to_string(),
+            chip_class: "prompt-category--development".to_string(),
+        },
+        CategoryDef {
+            slug: "agents".to_string(),
+            label: "Agents".to_string(),
+            chip_class: "prompt-category--agents".to_string(),
+        },
+        CategoryDef {
+            slug: "communication".to_string(),
+            label: "Communication".to_string(),
+            chip_class: "prompt-category--communication".to_string(),
+        },
+        CategoryDef {
+            slug: "writing".to_string(),
+            label: "Writing".to_string(),
+            chip_class: "prompt-category--writing".to_string(),
+        },
+        CategoryDef {
+            slug: "image".to_string(),
+            label: "Image".to_string(),
+            chip_class: "prompt-category--image".to_string(),
+        },
+        CategoryDef {
+            slug: RESERVED_CATEGORY_GENERAL.to_string(),
+            label: "General".to_string(),
+            chip_class: "prompt-category--general".to_string(),
+        },
+    ]
+}
+
+fn default_categories_vec() -> Vec<CategoryDef> {
+    default_categories()
+}
+
+/// Validate a category slug for config storage.
+pub fn validate_category_slug(slug: &str) -> Result<(), String> {
+    let trimmed = slug.trim();
+    if trimmed.is_empty() {
+        return Err("Category slug cannot be empty".to_string());
+    }
+    if trimmed.len() > 64 {
+        return Err("Category slug exceeds 64 characters".to_string());
+    }
+    let mut chars = trimmed.chars();
+    let Some(first) = chars.next() else {
+        return Err("Category slug cannot be empty".to_string());
+    };
+    if !first.is_ascii_lowercase() {
+        return Err("Category slug must start with a lowercase letter".to_string());
+    }
+    if !trimmed
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+    {
+        return Err(
+            "Category slug may only contain lowercase letters, digits, underscores, and hyphens"
+                .to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Validate a list of category definitions for save.
+pub fn validate_categories(categories: &[CategoryDef]) -> Result<(), String> {
+    if categories.is_empty() {
+        return Err("At least one category is required".to_string());
+    }
+    let mut slugs = std::collections::HashSet::new();
+    let mut has_general = false;
+    for cat in categories {
+        validate_category_slug(&cat.slug)?;
+        if cat.label.trim().is_empty() {
+            return Err(format!("Category '{}' label cannot be empty", cat.slug));
+        }
+        if cat.chip_class.trim().is_empty() {
+            return Err(format!("Category '{}' chip class cannot be empty", cat.slug));
+        }
+        if !slugs.insert(cat.slug.clone()) {
+            return Err(format!("Duplicate category slug: {}", cat.slug));
+        }
+        if cat.slug == RESERVED_CATEGORY_GENERAL {
+            has_general = true;
+        }
+    }
+    if !has_general {
+        return Err(format!(
+            "Category '{}' is required and cannot be removed",
+            RESERVED_CATEGORY_GENERAL
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub window: Option<WindowSize>,
     #[serde(default = "default_ephemeral_notification_seconds")]
     pub ephemeral_notification_seconds: u64,
+    #[serde(default = "default_categories_vec")]
+    pub categories: Vec<CategoryDef>,
     #[serde(default = "default_copy_targets")]
     pub copy_targets: HashMap<String, String>,
     #[serde(default = "default_last_copy_target")]
@@ -118,6 +230,7 @@ impl Default for AppConfig {
         Self {
             window: None,
             ephemeral_notification_seconds: DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS,
+            categories: default_categories(),
             copy_targets: default_copy_targets(),
             last_copy_target: default_last_copy_target(),
         }
@@ -158,6 +271,20 @@ impl AppConfig {
 
     pub fn ephemeral_notification_ms(&self) -> u64 {
         self.ephemeral_notification_seconds.saturating_mul(1000)
+    }
+
+    pub fn effective_categories(&self) -> Vec<CategoryDef> {
+        if self.categories.is_empty() {
+            return default_categories();
+        }
+        self.categories.clone()
+    }
+
+    pub fn settings_window_size(&self) -> WindowSize {
+        WindowSize {
+            width: SETTINGS_WINDOW_WIDTH,
+            height: SETTINGS_WINDOW_HEIGHT,
+        }
     }
 
     pub fn effective_copy_targets(&self) -> HashMap<String, String> {
@@ -285,6 +412,7 @@ mod tests {
             ephemeral_notification_seconds: DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS,
             copy_targets,
             last_copy_target: "gemini".to_string(),
+            ..AppConfig::default()
         };
         let yaml = serde_yaml::to_string(&config).unwrap();
         let parsed: AppConfig = serde_yaml::from_str(&yaml).unwrap();
@@ -302,6 +430,7 @@ mod tests {
             ephemeral_notification_seconds: DEFAULT_EPHEMERAL_NOTIFICATION_SECONDS,
             copy_targets: default_copy_targets(),
             last_copy_target: "missing".to_string(),
+            ..AppConfig::default()
         };
         assert_eq!(config.resolved_last_copy_target(), "claude");
     }
@@ -312,5 +441,44 @@ mod tests {
         assert!(config.set_last_copy_target("unknown").is_err());
         assert!(config.set_last_copy_target("claude").is_ok());
         assert_eq!(config.last_copy_target, "claude");
+    }
+
+    #[test]
+    fn default_config_includes_categories_with_general() {
+        let config = AppConfig::default();
+        let categories = config.effective_categories();
+        assert_eq!(categories.len(), 6);
+        assert!(categories.iter().any(|c| c.slug == "general"));
+    }
+
+    #[test]
+    fn yaml_roundtrip_preserves_categories() {
+        let mut categories = default_categories();
+        categories.push(CategoryDef {
+            slug: "custom".to_string(),
+            label: "Custom".to_string(),
+            chip_class: "prompt-category--general".to_string(),
+        });
+        let config = AppConfig {
+            categories,
+            ..AppConfig::default()
+        };
+        let yaml = serde_yaml::to_string(&config).unwrap();
+        let parsed: AppConfig = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(parsed.effective_categories().len(), 7);
+    }
+
+    #[test]
+    fn validate_categories_requires_general() {
+        let mut categories = default_categories();
+        categories.retain(|c| c.slug != "general");
+        assert!(validate_categories(&categories).is_err());
+    }
+
+    #[test]
+    fn validate_category_slug_rejects_invalid() {
+        assert!(validate_category_slug("").is_err());
+        assert!(validate_category_slug("Bad").is_err());
+        assert!(validate_category_slug("ok-slug_2").is_ok());
     }
 }

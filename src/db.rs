@@ -253,6 +253,18 @@ pub fn delete_prompt(conn: &Connection, id: i64) -> Result<()> {
     Ok(())
 }
 
+pub fn reassign_category(conn: &Connection, from: &str, to: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE prompts SET category = ?1 WHERE category = ?2",
+        params![to, from],
+    )?;
+    Ok(())
+}
+
+pub fn rename_category(conn: &Connection, from: &str, to: &str) -> Result<()> {
+    reassign_category(conn, from, to)
+}
+
 pub fn prompt_count(conn: &Connection) -> Result<i64> {
     conn.query_row("SELECT COUNT(*) FROM prompts", [], |row| row.get(0))
         .context("Failed to count prompts")

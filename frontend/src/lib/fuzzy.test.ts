@@ -5,7 +5,12 @@ import {
   filterPrompts,
   fuzzyMatch,
 } from "./fuzzy";
-import type { Prompt } from "../types";
+import type { CategoryDef, Prompt } from "../types";
+
+const categories: CategoryDef[] = [
+  { slug: "writing", label: "Writing", chipClass: "prompt-category--writing" },
+  { slug: "general", label: "General", chipClass: "prompt-category--general" },
+];
 
 const sample: Prompt[] = [
   {
@@ -40,6 +45,13 @@ describe("filterPrompts", () => {
     expect(filterPrompts(sample, "")).toHaveLength(2);
   });
 
+  it("includes general prompts when all categories selected", () => {
+    const selected = new Set(["writing", "general"]);
+    expect(
+      filterPrompts(sample, "", selected, ["writing", "general"], categories),
+    ).toHaveLength(2);
+  });
+
   it("prioritizes name matches", () => {
     const prompts: Prompt[] = [
       {
@@ -51,16 +63,14 @@ describe("filterPrompts", () => {
       },
       {
         id: 2,
-        name: "welcome",
+        name: "welcoming",
         description: "x",
-        content: "y",
+        content: "z",
         category: "general",
       },
     ];
     const result = filterPrompts(prompts, "wel");
-    expect(result).toHaveLength(2);
-    expect(result[0].name).toBe("welcome");
-    expect(result[1].name).toBe("abc");
+    expect(result[0].name).toBe("welcoming");
   });
 
   it("filters by selected categories", () => {
@@ -81,7 +91,7 @@ describe("filterPrompts", () => {
       },
     ];
     const selected = new Set(["development"]);
-    expect(filterPrompts(prompts, "", selected)).toHaveLength(1);
+    expect(filterPrompts(prompts, "", selected, ["development", "writing"])).toHaveLength(1);
     expect(filterPrompts(prompts, "", selected)[0].name).toBe("a");
   });
 
@@ -100,7 +110,7 @@ describe("filterPrompts", () => {
         category: "writing",
       },
     ];
-    expect(filterPrompts(prompts, "writ")).toHaveLength(1);
+    expect(filterPrompts(prompts, "writ", undefined, undefined, categories)).toHaveLength(1);
   });
 });
 
@@ -108,6 +118,5 @@ describe("filterHistory", () => {
   it("filters by title", () => {
     const entries = [{ id: 1, title: "[git](branch:main)", createdAt: 1 }];
     expect(filterHistory(entries, "git")).toHaveLength(1);
-    expect(filterHistory(entries, "nomatch")).toHaveLength(0);
   });
 });

@@ -1,9 +1,11 @@
+use std::cell::RefCell;
+
 use crate::config::AppConfig;
 use crate::ipc::response::{cmd_err, cmd_ok};
 use crate::ipc::types::{CopySettingsResult, CopyTargetDto, CopyTargetNamePayload};
 
-pub fn cmd_get_copy_settings(id: &str) -> (String, bool, bool) {
-    let config = AppConfig::load();
+pub fn cmd_get_copy_settings(id: &str, config: &RefCell<AppConfig>) -> (String, bool, bool) {
+    let config = config.borrow();
     let targets = config
         .sorted_copy_target_names()
         .into_iter()
@@ -21,8 +23,12 @@ pub fn cmd_get_copy_settings(id: &str) -> (String, bool, bool) {
     cmd_ok(id, result)
 }
 
-pub fn cmd_set_last_copy_target(id: &str, payload: CopyTargetNamePayload) -> (String, bool, bool) {
-    let mut config = AppConfig::load();
+pub fn cmd_set_last_copy_target(
+    id: &str,
+    payload: CopyTargetNamePayload,
+    config: &RefCell<AppConfig>,
+) -> (String, bool, bool) {
+    let mut config = config.borrow_mut();
     if let Err(e) = config.set_last_copy_target(&payload.name) {
         return cmd_err(id, e);
     }
@@ -33,8 +39,12 @@ pub fn cmd_set_last_copy_target(id: &str, payload: CopyTargetNamePayload) -> (St
     cmd_ok(id, true)
 }
 
-pub fn cmd_open_copy_target(id: &str, payload: CopyTargetNamePayload) -> (String, bool, bool) {
-    let mut config = AppConfig::load();
+pub fn cmd_open_copy_target(
+    id: &str,
+    payload: CopyTargetNamePayload,
+    config: &RefCell<AppConfig>,
+) -> (String, bool, bool) {
+    let mut config = config.borrow_mut();
     let Some(url) = config.url_for_copy_target(&payload.name) else {
         return cmd_err(id, format!("Unknown copy target: {}", payload.name));
     };
@@ -54,7 +64,7 @@ pub fn cmd_open_copy_target(id: &str, payload: CopyTargetNamePayload) -> (String
 
 #[cfg(test)]
 mod tests {
-    use crate::ipc::test_support::{handle_raw, FakeEffects};
+    use crate::ipc::test_support::{handle_raw, test_backend, FakeEffects};
     use std::env;
     use std::fs;
     use std::sync::{Mutex, OnceLock};
@@ -77,7 +87,7 @@ mod tests {
     #[test]
     fn get_copy_settings_returns_defaults() {
         with_temp_config(|| {
-            let (backend, _f) = crate::ipc::test_support::test_backend();
+            let (backend, _f) = test_backend();
             let effects = FakeEffects::default();
             let handled = handle_raw(
                 &backend,
@@ -96,7 +106,7 @@ mod tests {
     #[test]
     fn set_last_copy_target_persists() {
         with_temp_config(|| {
-            let (backend, _f) = crate::ipc::test_support::test_backend();
+            let (backend, _f) = test_backend();
             let effects = FakeEffects::default();
             let set = handle_raw(
                 &backend,
@@ -121,7 +131,7 @@ mod tests {
     #[test]
     fn open_copy_target_persists_last_target() {
         with_temp_config(|| {
-            let (backend, _f) = crate::ipc::test_support::test_backend();
+            let (backend, _f) = test_backend();
             let effects = FakeEffects::default();
             let open = handle_raw(
                 &backend,

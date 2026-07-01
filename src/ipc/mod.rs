@@ -7,6 +7,7 @@ mod limits;
 mod notifications;
 mod prompts;
 mod response;
+mod settings;
 mod types;
 
 #[cfg(test)]
@@ -19,25 +20,34 @@ pub use notifications::{AppNotification, NotificationCollector};
 pub use types::HandledIpc;
 
 use crate::db;
+use crate::config::AppConfig;
 use types::{IpcCommand, IpcRequest, SetWindowTitlePayload};
 
 use response::{invalid_request_json, ok_json};
 
+use std::cell::RefCell;
+use std::rc::Rc;
+
 pub struct IpcBackend {
     conn: db::Connection,
+    config: Rc<RefCell<AppConfig>>,
 }
 
 impl IpcBackend {
-    pub fn new(db_path: std::path::PathBuf) -> anyhow::Result<Self> {
-        Self::open(db_path, true)
+    pub fn new(db_path: std::path::PathBuf, config: Rc<RefCell<AppConfig>>) -> anyhow::Result<Self> {
+        Self::open(db_path, true, config)
     }
 
     #[cfg(test)]
     pub fn new_for_test(db_path: std::path::PathBuf) -> anyhow::Result<Self> {
-        Self::open(db_path, false)
+        Self::open(db_path, false, Rc::new(RefCell::new(AppConfig::load())))
     }
 
-    fn open(db_path: std::path::PathBuf, seed_if_empty: bool) -> anyhow::Result<Self> {
+    fn open(
+        db_path: std::path::PathBuf,
+        seed_if_empty: bool,
+        config: Rc<RefCell<AppConfig>>,
+    ) -> anyhow::Result<Self> {
         let conn = db::init_db(&db_path)?;
         if seed_if_empty && db::prompt_count(&conn)? == 0 {
             match crate::seed::upsert_seed_prompts(&conn) {
@@ -45,7 +55,7 @@ impl IpcBackend {
                 Err(e) => log::error!("Failed to seed built-in prompts: {e}"),
             }
         }
-        Ok(Self { conn })
+        Ok(Self { conn, config })
     }
 
     /// Handle a raw JSON IPC request and produce the response + side-effect flags.
@@ -60,19 +70,33 @@ impl IpcBackend {
                     quit_app: false,
                     run_update: false,
                     window_title: None,
+                    close_settings_window: false,
+                    open_settings_window: false,
+                    config_changed: false,
                 };
             }
         };
 
         let id = request.id.clone();
-        let (response, hide_window, quit_app, run_update, window_title) =
-            self.dispatch(request.command, effects, &id);
+        let (
+            response,
+            hide_window,
+            quit_app,
+            run_update,
+            window_title,
+            close_settings_window,
+            open_settings_window,
+            config_changed,
+        ) = self.dispatch(request.command, effects, &id);
         HandledIpc {
             response_json: response,
             hide_window,
             quit_app,
             run_update,
             window_title,
+            close_settings_window,
+            open_settings_window,
+            config_changed,
         }
     }
 
@@ -81,85 +105,142 @@ impl IpcBackend {
         command: IpcCommand,
         effects: &impl DesktopEffects,
         id: &str,
-    ) -> (String, bool, bool, bool, Option<String>) {
+    ) -> (
+        String,
+        bool,
+        bool,
+        bool,
+        Option<String>,
+        bool,
+        bool,
+        bool,
+    ) {
         match command {
             IpcCommand::ListPrompts => {
                 let (response, hide_window, quit_app) = self.cmd_list_prompts(id);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::SavePrompt(p) => {
                 let (response, hide_window, quit_app) = self.cmd_save_prompt(id, p, effects);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::DeletePrompt(p) => {
                 let (response, hide_window, quit_app) = self.cmd_delete_prompt(id, p, effects);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::VariablesForTemplate(p) => {
                 let (response, hide_window, quit_app) = self.cmd_variables(id, p);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::Interpolate(p) => {
                 let (response, hide_window, quit_app) = self.cmd_interpolate(id, p);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::CopyPrompt(p) => {
                 let (response, hide_window, quit_app) = self.cmd_copy_prompt(id, p, effects);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::ListHistory => {
                 let (response, hide_window, quit_app) = self.cmd_list_history(id);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::GetHistoryEntry(p) => {
                 let (response, hide_window, quit_app) = self.cmd_get_history_entry(id, p);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::UpdateHistoryEntry(p) => {
                 let (response, hide_window, quit_app) = self.cmd_update_history_entry(id, p);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::DeleteHistoryEntry(p) => {
                 let (response, hide_window, quit_app) = self.cmd_delete_history_entry(id, p);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::PruneHistory(p) => {
                 let (response, hide_window, quit_app) = self.cmd_prune_history(id, p);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::SetWindowTitle(p) => {
                 let (response, hide_window, quit_app, title) = self.cmd_set_window_title(id, p);
-                (response, hide_window, quit_app, false, title)
+                (response, hide_window, quit_app, false, title, false, false, false)
             }
             IpcCommand::HideWindow => {
                 let (response, hide_window, quit_app) = self.cmd_hide_window(id);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::Quit => {
                 let (response, hide_window, quit_app) = self.cmd_quit(id);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::RunUpdate => {
                 let (response, hide_window, quit_app) = self.cmd_run_update(id);
-                (response, hide_window, quit_app, true, None)
+                (response, hide_window, quit_app, true, None, false, false, false)
             }
             IpcCommand::GetAppInfo => {
                 let (response, hide_window, quit_app) = self.cmd_get_app_info(id);
-                (response, hide_window, quit_app, false, None)
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::GetCopySettings => {
-                let (response, hide_window, quit_app) = copy_targets::cmd_get_copy_settings(id);
-                (response, hide_window, quit_app, false, None)
+                let (response, hide_window, quit_app) =
+                    copy_targets::cmd_get_copy_settings(id, &self.config);
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::SetLastCopyTarget(p) => {
                 let (response, hide_window, quit_app) =
-                    copy_targets::cmd_set_last_copy_target(id, p);
-                (response, hide_window, quit_app, false, None)
+                    copy_targets::cmd_set_last_copy_target(id, p, &self.config);
+                (response, hide_window, quit_app, false, None, false, false, false)
             }
             IpcCommand::OpenCopyTarget(p) => {
                 let (response, hide_window, quit_app) =
-                    copy_targets::cmd_open_copy_target(id, p);
-                (response, hide_window, quit_app, false, None)
+                    copy_targets::cmd_open_copy_target(id, p, &self.config);
+                (response, hide_window, quit_app, false, None, false, false, false)
+            }
+            IpcCommand::GetAppSettings => {
+                let (response, hide_window, quit_app) =
+                    settings::cmd_get_app_settings(id, &self.config);
+                (response, hide_window, quit_app, false, None, false, false, false)
+            }
+            IpcCommand::SaveAppSettings(p) => {
+                let (response, hide_window, quit_app, config_changed) =
+                    settings::cmd_save_app_settings(id, p, &self.config, &self.conn);
+                (
+                    response,
+                    hide_window,
+                    quit_app,
+                    false,
+                    None,
+                    false,
+                    false,
+                    config_changed,
+                )
+            }
+            IpcCommand::OpenSettingsWindow => {
+                let (response, hide_window, quit_app, open_settings) =
+                    settings::cmd_open_settings_window(id);
+                (
+                    response,
+                    hide_window,
+                    quit_app,
+                    false,
+                    None,
+                    false,
+                    open_settings,
+                    false,
+                )
+            }
+            IpcCommand::CloseSettingsWindow => {
+                let (response, hide_window, quit_app, close_settings) =
+                    settings::cmd_close_settings_window(id);
+                (
+                    response,
+                    hide_window,
+                    quit_app,
+                    false,
+                    None,
+                    close_settings,
+                    false,
+                    false,
+                )
             }
         }
     }

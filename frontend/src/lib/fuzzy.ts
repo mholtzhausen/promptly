@@ -1,7 +1,6 @@
 import type { Prompt } from "../types";
+import type { CategoryDef } from "../types";
 import { categoryLabel } from "./categories";
-
-/** Fuzzy subsequence match — characters of pattern must appear in order in text. */
 export function fuzzyMatch(text: string, pattern: string): boolean {
   const tl = text.toLowerCase();
   const pl = pattern.toLowerCase();
@@ -28,10 +27,19 @@ export function filterPrompts(
   prompts: Prompt[],
   query: string,
   selectedCategories?: Set<string>,
+  allCategorySlugs?: string[],
+  categories: CategoryDef[] = [],
 ): Prompt[] {
-  const scoped = selectedCategories
-    ? filterByCategories(prompts, selectedCategories)
-    : prompts;
+  let scoped = prompts;
+  if (selectedCategories) {
+    const allSelected =
+      allCategorySlugs !== undefined &&
+      allCategorySlugs.length > 0 &&
+      allCategorySlugs.every((slug) => selectedCategories.has(slug));
+    if (!allSelected) {
+      scoped = filterByCategories(prompts, selectedCategories);
+    }
+  }
 
   const q = query.trim();
   if (!q) return scoped;
@@ -46,7 +54,7 @@ export function filterPrompts(
       nameMatches.push(p);
     } else if (fuzzyMatch(p.description, q)) {
       descMatches.push(p);
-    } else if (fuzzyMatch(categoryLabel(p.category), q)) {
+    } else if (fuzzyMatch(categoryLabel(p.category, categories), q)) {
       categoryMatches.push(p);
     } else if (fuzzyMatch(p.content, q)) {
       contentMatches.push(p);

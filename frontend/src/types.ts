@@ -93,6 +93,27 @@ export interface CopySettings {
   lastTarget: string;
 }
 
+export interface CategoryDef {
+  slug: string;
+  label: string;
+  chipClass: string;
+  previousSlug?: string;
+}
+
+export interface AppSettings {
+  ephemeralNotificationSeconds: number;
+  categories: CategoryDef[];
+  targets: CopyTarget[];
+  lastTarget: string;
+}
+
+export interface SaveAppSettingsPayload {
+  ephemeralNotificationSeconds?: number;
+  categories?: CategoryDef[];
+  targets?: CopyTarget[];
+  lastCopyTarget?: string;
+}
+
 export interface SavePromptResult {
   saved: boolean;
   prompt: Prompt | null;

@@ -73,6 +73,16 @@ export const api = {
 
   openCopyTarget: (name: string) =>
     request<boolean>("openCopyTarget", { name }),
+
+  getAppSettings: () =>
+    request<import("../types").AppSettings>("getAppSettings"),
+
+  saveAppSettings: (payload: import("../types").SaveAppSettingsPayload) =>
+    request<import("../types").AppSettings>("saveAppSettings", payload),
+
+  openSettingsWindow: () => request<boolean>("openSettingsWindow"),
+
+  closeSettingsWindow: () => request<boolean>("closeSettingsWindow"),
 };
 
 export type CopyPromptArgs = {

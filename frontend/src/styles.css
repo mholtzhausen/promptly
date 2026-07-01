@@ -631,6 +631,300 @@ button.danger {
   overflow: hidden;
 }
 
+.app.settings-window {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.settings-tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 120px;
+  padding-right: 8px;
+  border-right: 1px solid #d8d2c8;
+}
+
+.settings-tab {
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+
+.settings-tab--active {
+  background: #e8e2d6;
+  font-weight: 600;
+}
+
+.settings-panel {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.settings-panel h2 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.settings-hint {
+  margin: 0 0 12px;
+  color: #6a655c;
+  font-size: 0.9rem;
+}
+
+.settings-error {
+  margin: 0 0 8px;
+  color: #a33;
+}
+
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+}
+
+.settings-table th,
+.settings-table td {
+  padding: 6px 4px;
+  vertical-align: middle;
+}
+
+.settings-table input[type="text"],
+.settings-table input[type="url"] {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.copy-targets-table {
+  table-layout: fixed;
+}
+
+.copy-targets-table .copy-target-col-default {
+  width: 32px;
+  padding-left: 0;
+  padding-right: 0;
+  text-align: center;
+}
+
+.copy-targets-table .copy-target-col-name {
+  width: 24%;
+}
+
+.copy-targets-table .copy-target-col-url {
+  width: auto;
+}
+
+.copy-targets-table .copy-target-col-actions {
+  width: 36px;
+  padding-right: 0;
+  text-align: center;
+}
+
+.copy-target-input {
+  width: 100%;
+  height: 32px;
+  box-sizing: border-box;
+  font: inherit;
+  padding: 4px 8px;
+  border: 1px solid #d8d2c8;
+  border-radius: 6px;
+}
+
+.copy-target-default-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: transparent;
+}
+
+.copy-target-default-btn:disabled {
+  cursor: default;
+}
+
+.copy-target-default-btn:not(:disabled):hover,
+.copy-target-default-btn:not(:disabled):focus-visible {
+  color: rgba(61, 140, 82, 0.4);
+}
+
+.copy-target-default-btn--active {
+  color: #3d8c52;
+}
+
+.copy-target-default-btn--active:not(:disabled):hover,
+.copy-target-default-btn--active:not(:disabled):focus-visible {
+  color: #3d8c52;
+}
+
+.settings-chip-input {
+  margin-top: 4px;
+  width: 100%;
+}
+
+.settings-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-footer {
+  margin-top: auto;
+}
+
+.settings-status {
+  margin: 8px 0 0;
+  color: #6a655c;
+  font-size: 0.9rem;
+}
+
+#settings-button {
+  min-width: 36px;
+}
+
+.categories-tab__toolbar {
+  margin-bottom: 10px;
+}
+
+.category-chip-flow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.category-add-button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background-color: #a3b9c9;
+  color: #1a1a1a;
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.category-add-button:hover {
+  background-color: #8fa9bc;
+}
+
+.category-add-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.category-chip-button:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.category-edit-dialog {
+  position: fixed;
+  z-index: 1000;
+  background: #faf8f4;
+  border: 1px solid #d8d2c8;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  padding: 10px;
+  min-width: 240px;
+}
+
+.category-edit-dialog__name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.category-edit-dialog__delete {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  background: #e8d4d4;
+  color: #6b3030;
+}
+
+.category-edit-dialog__delete:hover {
+  background: #ddb8b8;
+}
+
+.category-edit-dialog__input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  padding: 6px 8px;
+  border: 1px solid #d8d2c8;
+  border-radius: 6px;
+}
+
+.category-chip-button {
+  cursor: pointer;
+  font: inherit;
+}
+
+.pastel-color-picker {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+  width: 100%;
+}
+
+.category-edit-dialog .pastel-color-picker {
+  max-width: none;
+}
+
+.category-color-swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: 2px solid;
+  cursor: pointer;
+  padding: 0;
+}
+
+.category-color-swatch--selected {
+  outline: 2px solid #4a6a8a;
+  outline-offset: 2px;
+}
+
+.category-filter-label .prompt-category {
+  vertical-align: middle;
+}
+
 .about-version {
   margin: 0 0 8px;
   font-weight: 600;
