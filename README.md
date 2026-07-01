@@ -7,7 +7,8 @@ A Linux desktop system-tray application that manages prompt templates with varia
 - **System Tray Icon**: freedesktop StatusNotifierItem via `ksni`.
 - **Global Hotkey**: `Ctrl+Alt+Space` toggles the prompt window. X11 uses `XGrabKey`; Wayland falls back to `rdev`.
 - **Fuzzy Search**: Filter templates by name, description, category, or content (client-side).
-- **Category Filter**: Group templates by category (Development, Agents, Writing, Image, and more) with checklist filtering and colored labels on the list.
+- **Category Filter**: Group templates by category (Development, Agents, Writing, Image, and more) with checklist filtering and colored labels on the list; manage categories in **Settings**.
+- **Settings Window**: Configure notification timeout, custom categories (labels and colors), and copy targets from a dedicated settings window.
 - **Starter Pack**: First launch and `promptly --seed` install built-in AI assistant prompt templates.
 - **Variable Interpolation**: Templates with `<var name="…" type="…" />` placeholders open a type-aware input screen (legacy `{{…}}` syntax is migrated automatically).
 - **Type-Aware Inputs**: Text, number, option (dropdown), and multiline fields.
@@ -54,7 +55,7 @@ systemctl --user enable --now promptly.service
 Pin a specific release:
 
 ```bash
-PROMPTLY_VERSION=v1.0.0 curl -fsSL https://raw.githubusercontent.com/mholtzhausen/promptly/main/scripts/install.sh | bash
+PROMPTLY_VERSION=v1.1.0 curl -fsSL https://raw.githubusercontent.com/mholtzhausen/promptly/main/scripts/install.sh | bash
 ```
 
 To remove a user-local install: `make uninstall` (from a source checkout) or delete the files listed above manually.
@@ -106,7 +107,7 @@ Set `PROMPTLY_DB_PATH` to override the default SQLite location. Set `RUST_LOG=pr
 | Path | Purpose |
 |---|---|
 | `~/.config/promptly/prompts.db` | SQLite prompts + copy history |
-| `~/.config/promptly/config.yml` | Window size, copy targets (`claude`/`gemini` URLs), last copy target |
+| `~/.config/promptly/config.yml` | Window size, category definitions, copy targets, notification timeout, last copy target |
 | `~/.config/promptly/promptly.lock` | Single-instance lock file |
 | `~/.local/state/promptly/promptly.log` | Daemon log file (when backgrounded) |
 

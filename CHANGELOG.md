@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-07-01
+
+### Added
+
+- **Settings window** — dedicated window (gear icon on the prompt list) with General, Categories, and Copy Targets tabs
+- Category management UI: add, rename, recolor, and remove custom categories (with prompt reassignment safeguards)
+- Copy target editor in settings: add, edit, reorder, and remove targets without editing `config.yml` by hand
+- Configurable ephemeral notification timeout (1–60 seconds) in General settings
+
+### Changed
+
+- Fuzzy search ranks matches by field relevance and supports tighter list filtering when categories are selected
+- Prompt list layout and category chips refreshed; category colors centralized with consistent pastel palette
+- Window focus handling improved when opening settings and returning to the main prompt window
+
 ## [1.0.0] - 2026-06-26
 
 ### Added
@@ -72,7 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fuzzy search, variable interpolation, copy history
 - Global hotkey (Ctrl+Alt+Space) and ksni tray icon
 
-[Unreleased]: https://github.com/mholtzhausen/promptly/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/mholtzhausen/promptly/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/mholtzhausen/promptly/releases/tag/v1.1.0
 [1.0.0]: https://github.com/mholtzhausen/promptly/releases/tag/v1.0.0
 [0.8.0+1]: https://github.com/mholtzhausen/promptly/releases/tag/v0.8.0%2B1
 [0.8.0]: https://github.com/mholtzhausen/promptly/releases/tag/v0.8.0
