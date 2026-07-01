@@ -45,6 +45,8 @@ pub enum AppEvent {
     ShowAbout,
     /// Push in-app notifications to the React footer.
     PushNotifications(Vec<AppNotification>),
+    /// Retry focusing the main search field after show (WebKitGTK / Wayland timing).
+    DeferredFocusSearch,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,6 +194,7 @@ impl PromptlyWebviewApp {
                 Event::UserEvent(AppEvent::PushNotifications(notifications)) => {
                     state.push_notifications(&notifications);
                 }
+                Event::UserEvent(AppEvent::DeferredFocusSearch) => state.deferred_focus_search(),
                 Event::WindowEvent {
                     event: WindowEvent::Focused(true),
                     window_id,
@@ -318,6 +321,8 @@ impl PromptlyWebviewApp {
         window_focus::present_and_activate(&self.window);
         self.schedule_reveal_opacity();
         self.finalize_show();
+        self.focus_main_input();
+        self.schedule_deferred_focus_search();
     }
 
     fn schedule_reveal_opacity(&self) {
@@ -352,9 +357,38 @@ impl PromptlyWebviewApp {
 
     fn on_window_focused(&self) {
         if self.focus_pending.take() {
-            self.focus_webview();
+            self.focus_main_input();
         }
         self.finalize_show();
+    }
+
+    /// Focus the native window/webview and the list search field (main pane only).
+    fn focus_main_input(&self) {
+        if self.window_pane.get() != WindowPane::Main {
+            return;
+        }
+        self.focus_pending.set(false);
+        self.focus_webview();
+        self.notify_frontend_focus_search();
+    }
+
+    fn deferred_focus_search(&self) {
+        if !self.window.is_visible() || self.window_pane.get() != WindowPane::Main {
+            return;
+        }
+        self.focus_webview();
+        self.notify_frontend_focus_search();
+    }
+
+    fn schedule_deferred_focus_search(&self) {
+        if self.window_pane.get() != WindowPane::Main {
+            return;
+        }
+        let proxy = self.event_proxy.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            let _ = proxy.send_event(AppEvent::DeferredFocusSearch);
+        });
     }
 
     fn finalize_show(&self) {
@@ -384,6 +418,12 @@ impl PromptlyWebviewApp {
         let _ = self
             .webview
             .evaluate_script("window.__promptlyOnShow && window.__promptlyOnShow();");
+    }
+
+    fn notify_frontend_focus_search(&self) {
+        let _ = self.webview.evaluate_script(
+            "window.__promptlyFocusSearch && window.__promptlyFocusSearch();",
+        );
     }
 
     fn notify_frontend_about(&self) {

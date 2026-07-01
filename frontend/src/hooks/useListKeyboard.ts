@@ -11,6 +11,8 @@ export function useAggressiveFocus(
     requestAnimationFrame(attempt);
     window.setTimeout(attempt, 0);
     window.setTimeout(attempt, 50);
+    window.setTimeout(attempt, 100);
+    window.setTimeout(attempt, 150);
   }, [ref]);
 }
 
